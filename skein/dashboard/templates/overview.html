@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Overview{% endblock %}
+{% block content %}
+<h1>Overview</h1>
+<div id="overview-panel"
+     hx-get="{{ url_for('dashboard.overview') }}"
+     hx-trigger="every 5s"
+     hx-swap="innerHTML">
+  {% include "_overview_panel.html" %}
+</div>
+{% endblock %}

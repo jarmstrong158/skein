@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Agents{% endblock %}
+{% block content %}
+<h1>Agents</h1>
+{% if agents %}
+<table class="data">
+  <thead><tr><th>ID</th><th>Name</th><th>Endpoint</th><th>Messages</th><th>Last seen</th><th>First seen</th></tr></thead>
+  <tbody>
+    {% for a in agents %}
+    <tr>
+      <td><code>{{ a.id }}</code></td>
+      <td>{{ a.name or '—' }}</td>
+      <td>{{ a.endpoint_url or '—' }}</td>
+      <td><a href="{{ url_for('dashboard.tasks', agent=a.id) }}">{{ a.message_count }}</a></td>
+      <td class="dim">{{ a.last_seen_at }}</td>
+      <td class="dim">{{ a.first_seen_at }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No agents seen yet.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Task {{ timeline.task_id }}{% endblock %}
+{% block content %}
+<div class="task-header">
+  <h1>Task <code>{{ timeline.task_id }}</code></h1>
+  <a class="json-link" href="{{ url_for('dashboard.task_detail', task_id=timeline.task_id, format='json') }}">View as JSON</a>
+</div>
+
+<dl class="task-meta">
+  <dt>State</dt><dd><span class="state state-{{ timeline.task.current_state }}">{{ timeline.task.current_state }}</span></dd>
+  {% if timeline.task.context_id %}<dt>Context</dt><dd><code>{{ timeline.task.context_id }}</code></dd>{% endif %}
+  <dt>Created</dt><dd class="dim">{{ timeline.task.created_at }}</dd>
+  <dt>Updated</dt><dd class="dim">{{ timeline.task.updated_at }}</dd>
+  {% if timeline.task.terminal_at %}<dt>Terminal</dt><dd class="dim">{{ timeline.task.terminal_at }}</dd>{% endif %}
+  {% if timeline.task.error_code %}<dt>Error</dt><dd class="error">{{ timeline.task.error_code }} — {{ timeline.task.error_message }}</dd>{% endif %}
+  {% if timeline.referenced_task_ids %}
+  <dt>References</dt>
+  <dd>
+    {% for ref in timeline.referenced_task_ids %}
+      <a href="{{ url_for('dashboard.task_detail', task_id=ref) }}"><code>{{ ref }}</code></a>{% if not loop.last %}, {% endif %}
+    {% endfor %}
+  </dd>
+  {% endif %}
+</dl>
+
+<h2>Timeline</h2>
+{% if timeline.events %}
+<ol class="timeline">
+  {% for e in timeline.events %}
+  <li class="timeline-event timeline-{{ e.kind }}">
+    <div class="event-time">{{ e.at }}</div>
+    {% if e.kind == "message" %}
+      <div class="event-body">
+        <div class="event-head">
+          <span class="badge dir-{{ e.data.direction }}">{{ e.data.direction }}</span>
+          <span class="method">{{ e.data.method }}</span>
+          {% if e.data.from_agent_id %}
+            <span class="agent">{{ agents_map.get(e.data.from_agent_id, e.data.from_agent_id) }}</span>
+            {% if e.data.to_agent_id %} → <span class="agent">{{ agents_map.get(e.data.to_agent_id, e.data.to_agent_id) }}</span>{% endif %}
+          {% endif %}
+          <span class="seq">#{{ e.data.sequence }}</span>
+        </div>
+        {% if e.data.references %}
+        <div class="refs">refs:
+          {% for ref in e.data.references %}<a href="{{ url_for('dashboard.task_detail', task_id=ref) }}"><code>{{ ref }}</code></a>{% if not loop.last %}, {% endif %}{% endfor %}
+        </div>
+        {% endif %}
+        <details>
+          <summary>Payload</summary>
+          <pre>{{ json.dumps(e.data.payload, indent=2) }}</pre>
+        </details>
+      </div>
+    {% elif e.kind == "state_transition" %}
+      <div class="event-body">
+        <span class="badge badge-state">state</span>
+        <span class="state state-{{ e.data.from_state or 'none' }}">{{ e.data.from_state or '∅' }}</span>
+        →
+        <span class="state state-{{ e.data.to_state }}">{{ e.data.to_state }}</span>
+      </div>
+    {% elif e.kind == "artifact" %}
+      <div class="event-body">
+        <span class="badge badge-artifact">artifact</span>
+        <strong>{{ e.data.name or '(unnamed)' }}</strong>
+        <span class="dim">{{ e.data.mime_type or '' }} {% if e.data.bytes %}· {{ e.data.bytes }} B{% endif %}</span>
+        {% if e.data.content_text %}
+        <pre class="artifact-text">{{ e.data.content_text }}</pre>
+        {% endif %}
+      </div>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ol>
+{% else %}
+<p class="empty">No events recorded.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,26 @@
+<div class="stat-grid">
+  <div class="stat-card"><div class="stat-num">{{ counts.active_tasks }}</div><div class="stat-label">Active tasks</div></div>
+  <div class="stat-card stat-card-warn"><div class="stat-num">{{ counts.failed_24h }}</div><div class="stat-label">Failures (24h)</div></div>
+  <div class="stat-card"><div class="stat-num">{{ counts.agents_seen }}</div><div class="stat-label">Agents seen</div></div>
+  <div class="stat-card"><div class="stat-num">{{ counts.messages_24h }}</div><div class="stat-label">Messages (24h)</div></div>
+</div>
+
+<h2>Recent activity</h2>
+{% if recent %}
+<table class="data">
+  <thead><tr><th>Task</th><th>State</th><th>Context</th><th>Messages</th><th>Updated</th></tr></thead>
+  <tbody>
+    {% for t in recent %}
+    <tr>
+      <td><a href="{{ url_for('dashboard.task_detail', task_id=t.id) }}"><code>{{ t.id }}</code></a></td>
+      <td><span class="state state-{{ t.current_state }}">{{ t.current_state }}</span></td>
+      <td>{% if t.context_id %}<code>{{ t.context_id }}</code>{% endif %}</td>
+      <td>{{ t.message_count }}</td>
+      <td class="dim">{{ t.updated_at }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No tasks captured yet. Send a payload to <code>POST /trace/ingest</code>.</p>
+{% endif %}

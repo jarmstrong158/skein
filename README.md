@@ -56,7 +56,7 @@ pytest -q
 ## Roadmap
 
 - **Phase 1 — Capture spine** ✅ ingest webhook, SQLite schema, parser/normalizer, tests
-- **Phase 2 — Timeline + dashboard** Flask + HTMX dashboard, server-rendered timeline view
+- **Phase 2 — Timeline + dashboard** ✅ Flask + HTMX dashboard, server-rendered timeline view, dark theme
 - **Phase 3 — Failure detection + SDK** stale-task sweep, cascade detection, Python SDK monkey-patch of `a2a-sdk`, `skein demo` toy agent
 - **Phase 4 — MCP server** 6 tools for Claude Desktop / Claude Code
 - **Phase 5 — Packaging + release** PyInstaller bundle, NSIS installer, GitHub Actions CI, v1.0

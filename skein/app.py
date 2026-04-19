@@ -5,6 +5,7 @@ from __future__ import annotations
 from flask import Flask, g
 
 from .config import Config
+from .dashboard.routes import bp as dashboard_bp
 from .db import open_db
 from .ingest.routes import bp as ingest_bp
 
@@ -31,6 +32,7 @@ def create_app(config: Config | None = None, *, db_conn=None) -> Flask:
             db.close()
 
     app.register_blueprint(ingest_bp)
+    app.register_blueprint(dashboard_bp)
     return app
 
 

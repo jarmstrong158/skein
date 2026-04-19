@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Skein{% endblock %} — Skein</title>
+  <link rel="stylesheet" href="{{ url_for('dashboard.static', filename='skein.css') }}">
+  <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a href="{{ url_for('dashboard.overview') }}" class="brand">Skein</a>
+    <nav>
+      <a href="{{ url_for('dashboard.overview') }}">Overview</a>
+      <a href="{{ url_for('dashboard.tasks') }}">Tasks</a>
+      <a href="{{ url_for('dashboard.agents') }}">Agents</a>
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
