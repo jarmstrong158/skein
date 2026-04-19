@@ -10,7 +10,6 @@ from ..db import get_db
 from ..failures.detector import cascade_for, failure_patterns, recent_failures
 from ..timeline.builder import build, to_dict
 
-
 bp = Blueprint(
     "dashboard",
     __name__,
@@ -68,6 +67,86 @@ def overview():
     return render_template("overview.html", counts=counts, recent=recent)
 
 
+@bp.get("/contexts")
+def contexts():
+    """List A2A contextIds with task counts and aggregate state info.
+
+    A contextId groups tasks/messages into one logical conversation, per the
+    A2A spec. This view is the primary way to browse "the whole conversation".
+    """
+    conn = get_db()
+    rows = conn.execute(
+        """
+        SELECT context_id,
+               COUNT(*)                                          AS task_count,
+               SUM(CASE WHEN current_state IN ('failed','rejected','canceled') THEN 1 ELSE 0 END)
+                                                                 AS failed_count,
+               SUM(CASE WHEN terminal_at IS NULL THEN 1 ELSE 0 END)
+                                                                 AS active_count,
+               MIN(created_at)                                   AS started_at,
+               MAX(updated_at)                                   AS last_activity_at
+          FROM tasks
+         WHERE context_id IS NOT NULL
+         GROUP BY context_id
+         ORDER BY MAX(updated_at) DESC
+         LIMIT 200
+        """
+    ).fetchall()
+    return render_template("contexts.html", contexts=rows)
+
+
+@bp.get("/contexts/<context_id>")
+def context_detail(context_id: str):
+    conn = get_db()
+    tasks_in_ctx = conn.execute(
+        """
+        SELECT t.id, t.current_state, t.created_at, t.updated_at, t.error_code,
+               (SELECT COUNT(*) FROM messages m WHERE m.task_id = t.id) AS message_count
+          FROM tasks t
+         WHERE t.context_id = ?
+         ORDER BY t.created_at
+        """,
+        (context_id,),
+    ).fetchall()
+    if not tasks_in_ctx:
+        abort(404)
+
+    # Pull every message in the context, ordered chronologically across tasks,
+    # so we render one merged conversation timeline.
+    msgs = conn.execute(
+        """
+        SELECT m.id, m.task_id, m.sequence, m.direction, m.method,
+               m.from_agent_id, m.to_agent_id,
+               m.captured_at, m.occurred_at,
+               m.trace_id, t.current_state AS task_state
+          FROM messages m
+          JOIN tasks t ON t.id = m.task_id
+         WHERE t.context_id = ?
+         ORDER BY COALESCE(m.occurred_at, m.captured_at), m.id
+        """,
+        (context_id,),
+    ).fetchall()
+
+    agent_ids = {m["from_agent_id"] for m in msgs if m["from_agent_id"]} | {
+        m["to_agent_id"] for m in msgs if m["to_agent_id"]
+    }
+    agents_map: dict[str, str] = {}
+    if agent_ids:
+        placeholders = ",".join("?" for _ in agent_ids)
+        for r in conn.execute(
+            f"SELECT id, name FROM agents WHERE id IN ({placeholders})", list(agent_ids)
+        ).fetchall():
+            agents_map[r["id"]] = r["name"] or r["id"]
+
+    return render_template(
+        "context_detail.html",
+        context_id=context_id,
+        tasks=tasks_in_ctx,
+        messages=msgs,
+        agents_map=agents_map,
+    )
+
+
 @bp.get("/agents")
 def agents():
     conn = get_db()
@@ -85,9 +164,11 @@ def agents():
 
 @bp.get("/tasks")
 def tasks():
+    from ..states import ALL_STATES
     conn = get_db()
     state = request.args.get("state")
     agent = request.args.get("agent")
+    q = (request.args.get("q") or "").strip()
     where = []
     params: list = []
     if state:
@@ -99,6 +180,18 @@ def tasks():
             "AND (m.from_agent_id = ? OR m.to_agent_id = ?))"
         )
         params.extend([agent, agent])
+    if q:
+        # Free-text search across task id, context id, error fields, and
+        # the raw payload bodies of messages on the task. Cheap LIKE scan;
+        # adequate for local-tool scale.
+        where.append(
+            "(t.id LIKE ? OR t.context_id LIKE ? OR t.error_code LIKE ? "
+            "OR t.error_message LIKE ? OR EXISTS ("
+            "  SELECT 1 FROM messages m WHERE m.task_id = t.id "
+            "    AND m.payload_json LIKE ?))"
+        )
+        like = f"%{q}%"
+        params.extend([like, like, like, like, like])
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
     rows = conn.execute(
         f"""
@@ -112,8 +205,16 @@ def tasks():
         """,
         params,
     ).fetchall()
-    states = ["submitted", "working", "input-required", "completed", "failed", "canceled", "rejected"]
-    return render_template("tasks.html", tasks=rows, states=states, current_state=state, current_agent=agent)
+    if _is_htmx():
+        return render_template("_tasks_table.html", tasks=rows)
+    return render_template(
+        "tasks.html",
+        tasks=rows,
+        states=list(ALL_STATES),
+        current_state=state,
+        current_agent=agent,
+        current_q=q,
+    )
 
 
 @bp.get("/tasks/<task_id>")

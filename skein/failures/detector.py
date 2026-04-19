@@ -15,7 +15,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-TERMINAL_STATES = ("completed", "failed", "canceled", "rejected")
+from ..states import FAILURE_STATES, TERMINAL_STATES  # noqa: F401
+
 TIMEOUT_ERROR_CODE = "skein/timeout"
 TIMEOUT_ERROR_MESSAGE = "Task exceeded configured timeout without reaching a terminal state."
 

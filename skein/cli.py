@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-import time
-from datetime import datetime, timezone
 
 from rich.console import Console
 
@@ -21,176 +19,94 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     app = create_app(cfg)
     if not args.no_scheduler:
         start_scheduler(cfg)
-        console.print(f"[dim]scheduler started (stale_sweep every 60s)[/dim]")
+        console.print("[dim]scheduler started (stale_sweep every 60s)[/dim]")
     console.print(f"[bold green]Skein[/bold green] serving at [bold]http://{cfg.host}:{cfg.port}[/bold]")
     app.run(host=cfg.host, port=cfg.port, debug=False, use_reloader=False)
     return 0
 
 
 def _cmd_demo(args: argparse.Namespace) -> int:
-    """Run a self-contained 3-agent A2A toy workflow against a Skein endpoint.
+    """Run a self-contained multi-agent A2A toy workflow against a Skein endpoint.
 
-    No real agents, no a2a-sdk needed — just synthetic JSON-RPC payloads that
-    exercise every part of the Skein store: success path, failed path, cascade.
+    No real agents, no a2a-sdk needed — just synthetic JSON-RPC payloads
+    that exercise every part of the Skein store: success path, explicit
+    failure, cascade, stale task, OTLP trace propagation, spec violations,
+    and multiple parallel contexts.
     """
+    from ._demo_data import build_scenarios
     from .sdk import client as sdk_client  # internal helper, not public API
 
     client = sdk_client.install(endpoint=args.endpoint, raise_on_error=False)
     console.print(f"[bold]Skein demo[/bold] -> {args.endpoint}")
 
-    agents = {
-        "orchestrator": {
-            "name": "Orchestrator",
-            "url": "https://orchestrator.demo/agent",
-            "version": "1.0.0",
-            "skills": [{"id": "route", "name": "Route requests"}],
-        },
-        "researcher": {
-            "name": "Researcher",
-            "url": "https://researcher.demo/agent",
-            "version": "1.0.0",
-            "skills": [{"id": "search", "name": "Search the web"}],
-        },
-        "writer": {
-            "name": "Writer",
-            "url": "https://writer.demo/agent",
-            "version": "1.0.0",
-            "skills": [{"id": "draft", "name": "Draft a summary"}],
-        },
-    }
-    for card in agents.values():
+    scenarios = build_scenarios()
+
+    for card in scenarios.agent_cards:
         client.send_agent_card(card)
-    console.print(f"  registered [cyan]{len(agents)}[/cyan] agents")
+    console.print(f"  registered [cyan]{len(scenarios.agent_cards)}[/cyan] agents")
 
-    def now() -> str:
-        return datetime.now(timezone.utc).isoformat()
+    for entry in scenarios.events:
+        client.send(entry["payload"], direction=entry["direction"])
 
-    ctx = "ctx-demo-001"
-
-    # ---- Successful task: orchestrator -> researcher ------------------------
-    task_a = "task-research-001"
-    client.send(
-        {
-            "jsonrpc": "2.0", "id": "1", "method": "message/send",
-            "params": {
-                "message": {
-                    "messageId": "m1", "role": "user",
-                    "parts": [{"kind": "text", "text": "What's the latest on A2A protocol?"}],
-                    "taskId": task_a, "contextId": ctx,
-                    "agentId": agents["orchestrator"]["url"],
-                    "timestamp": now(),
-                },
-                "toAgentId": agents["researcher"]["url"],
-            },
-        },
-        direction="outbound",
-    )
-    client.send(
-        {"jsonrpc": "2.0", "id": "1", "result": {
-            "kind": "status-update", "taskId": task_a, "contextId": ctx,
-            "status": {"state": "working", "timestamp": now()},
-        }},
-        direction="inbound",
-    )
-    time.sleep(0.2)
-    client.send(
-        {"jsonrpc": "2.0", "id": "1", "result": {
-            "id": task_a, "contextId": ctx,
-            "status": {"state": "completed", "timestamp": now()},
-            "artifacts": [{
-                "name": "research_notes", "mimeType": "text/plain",
-                "parts": [{"kind": "text", "text": "A2A is now Linux Foundation-governed (Apr 2025)."}],
-            }],
-        }},
-        direction="inbound",
-    )
-    console.print(f"  [green]OK[/green] {task_a}: orchestrator -> researcher -> completed")
-
-    # ---- Failing task: orchestrator -> writer (depends on task_a) -----------
-    task_b = "task-draft-001"
-    client.send(
-        {
-            "jsonrpc": "2.0", "id": "2", "method": "message/send",
-            "params": {
-                "message": {
-                    "messageId": "m2", "role": "user",
-                    "parts": [{"kind": "text", "text": "Draft a summary using the research."}],
-                    "taskId": task_b, "contextId": ctx,
-                    "referenceTaskIds": [task_a],
-                    "agentId": agents["orchestrator"]["url"],
-                    "timestamp": now(),
-                },
-                "toAgentId": agents["writer"]["url"],
-            },
-        },
-        direction="outbound",
-    )
-    client.send(
-        {"jsonrpc": "2.0", "id": "2",
-         "result": {
-             "id": task_b, "contextId": ctx,
-             "status": {"state": "failed", "timestamp": now()},
-         },
-         "error": {"code": -32002, "message": "Writer agent unreachable (502 Bad Gateway)"},
-        },
-        direction="inbound",
-    )
-    console.print(f"  [red]X[/red] {task_b}: writer unreachable (refs {task_a})")
-
-    # ---- Cascade: orchestrator's own follow-up task fails because writer's did
-    task_c = "task-followup-001"
-    client.send(
-        {
-            "jsonrpc": "2.0", "id": "3", "method": "message/send",
-            "params": {
-                "message": {
-                    "messageId": "m3", "role": "user",
-                    "parts": [{"kind": "text", "text": "Notify on completion."}],
-                    "taskId": task_c, "contextId": ctx,
-                    "referenceTaskIds": [task_b],
-                    "agentId": agents["orchestrator"]["url"],
-                    "timestamp": now(),
-                },
-            },
-        },
-        direction="outbound",
-    )
-    client.send(
-        {"jsonrpc": "2.0", "id": "3",
-         "result": {
-             "id": task_c, "contextId": ctx,
-             "status": {"state": "failed", "timestamp": now()},
-         },
-         "error": {"code": -32099, "message": "Upstream task failed"},
-        },
-        direction="inbound",
-    )
-    console.print(f"  [red]X[/red] {task_c}: cascaded failure from {task_b}")
-
-    # ---- Stale task (will be marked failed by stale_sweep within ~60s) -----
-    task_d = "task-stuck-001"
-    client.send(
-        {
-            "jsonrpc": "2.0", "id": "4", "method": "message/send",
-            "params": {
-                "message": {
-                    "messageId": "m4", "role": "user",
-                    "parts": [{"kind": "text", "text": "Long-running scrape."}],
-                    "taskId": task_d, "contextId": "ctx-demo-002",
-                    "agentId": agents["orchestrator"]["url"],
-                    "timestamp": now(),
-                },
-            },
-        },
-        direction="outbound",
-    )
-    console.print(f"  [yellow]...[/yellow] {task_d}: left in 'submitted' state to demo stale-sweep")
+    for note in scenarios.summary_lines:
+        console.print("  " + note)
 
     console.print(
         f"\n[bold]Open[/bold] [cyan]{args.endpoint}[/cyan] to inspect.\n"
-        f"  * Overview / Tasks / Failures show all the above\n"
-        f"  * Task detail for {task_b} shows cascade to {task_c}\n"
-        f"  * {task_d} will appear under Failures within ~60s if scheduler is running"
+        f"  * Overview / Tasks / Contexts / Failures / Spec warnings show all the above\n"
+        f"  * Task detail pages surface cascades, OTLP trace IDs, and per-task spec warnings\n"
+        f"  * Stuck tasks will be marked failed by the stale-sweep within ~60s"
+    )
+    return 0
+
+
+def _cmd_clean(args: argparse.Namespace) -> int:
+    from .config import Config
+    from .db import open_db
+    from .retention import clean_older_than, parse_duration
+
+    cfg = Config.load(args.config)
+    try:
+        delta = parse_duration(args.older_than)
+    except ValueError as e:
+        console.print(f"[red]error:[/red] {e}")
+        return 2
+
+    if args.dry_run:
+        from datetime import datetime, timezone
+        cutoff = (datetime.now(timezone.utc) - delta).isoformat()
+        conn = open_db(cfg.db_path)
+        try:
+            n = conn.execute(
+                "SELECT COUNT(*) AS c FROM tasks WHERE terminal_at IS NOT NULL AND updated_at < ?",
+                (cutoff,),
+            ).fetchone()["c"]
+            m = conn.execute(
+                "SELECT COUNT(*) AS c FROM messages WHERE task_id IN "
+                "(SELECT id FROM tasks WHERE terminal_at IS NOT NULL AND updated_at < ?)",
+                (cutoff,),
+            ).fetchone()["c"]
+        finally:
+            conn.close()
+        console.print(
+            f"[yellow]dry-run:[/yellow] would delete {n} task(s) and {m} message(s) "
+            f"older than {args.older_than} (cutoff {cutoff})"
+        )
+        return 0
+
+    conn = open_db(cfg.db_path)
+    try:
+        result = clean_older_than(conn, older_than=delta)
+    finally:
+        conn.close()
+    console.print(
+        f"[bold]Cleaned[/bold] tasks older than {args.older_than} (cutoff {result.cutoff_iso}):\n"
+        f"  tasks:        {result.tasks_deleted}\n"
+        f"  messages:     {result.messages_deleted}\n"
+        f"  transitions:  {result.transitions_deleted}\n"
+        f"  artifacts:    {result.artifacts_deleted}\n"
+        f"  refs:         {result.refs_deleted}\n"
+        f"  spec warnings:{result.warnings_deleted}"
     )
     return 0
 
@@ -209,6 +125,14 @@ def main(argv: list[str] | None = None) -> int:
     p_demo.add_argument("--endpoint", default="http://127.0.0.1:5050",
                         help="URL of a running Skein instance")
     p_demo.set_defaults(func=_cmd_demo)
+
+    p_clean = sub.add_parser("clean", help="Delete terminal tasks older than a cutoff")
+    p_clean.add_argument("--older-than", default="7d",
+                         help="Cutoff age, e.g. '7d', '12h', '30m' (default: 7d)")
+    p_clean.add_argument("--config", default="./config.json")
+    p_clean.add_argument("--dry-run", action="store_true",
+                         help="Report what would be deleted without modifying the DB")
+    p_clean.set_defaults(func=_cmd_clean)
 
     args = p.parse_args(argv)
     return args.func(args)

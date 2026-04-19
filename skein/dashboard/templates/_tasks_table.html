@@ -1,0 +1,20 @@
+{% if tasks %}
+<table class="data">
+  <thead><tr><th>Task</th><th>Context</th><th>State</th><th>Messages</th><th>Created</th><th>Updated</th><th>Error</th></tr></thead>
+  <tbody>
+    {% for t in tasks %}
+    <tr>
+      <td><a href="{{ url_for('dashboard.task_detail', task_id=t.id) }}"><code>{{ t.id }}</code></a></td>
+      <td>{% if t.context_id %}<a href="{{ url_for('dashboard.context_detail', context_id=t.context_id) }}"><code>{{ t.context_id }}</code></a>{% endif %}</td>
+      <td><span class="state state-{{ t.current_state }}">{{ t.current_state }}</span></td>
+      <td>{{ t.message_count }}</td>
+      <td class="dim">{{ t.created_at }}</td>
+      <td class="dim">{{ t.updated_at }}</td>
+      <td>{{ t.error_code or '' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No tasks match.</p>
+{% endif %}

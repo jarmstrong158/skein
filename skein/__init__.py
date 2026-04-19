@@ -8,6 +8,6 @@ enterprise observability backends, A2A's native OTLP trace propagation
 forwards directly to OpenTelemetry-compatible platforms.
 """
 
-__version__ = "0.1.0"
+from ._version import __version__
 
 __all__ = ["__version__"]

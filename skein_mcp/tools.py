@@ -6,6 +6,7 @@ client. server.py wraps each one with the MCP tool decorator.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 from typing import Any
@@ -127,9 +128,7 @@ def export_trace(
         ).fetchall():
             agent = dict(r)
             if agent.get("card_json"):
-                try:
+                with contextlib.suppress(TypeError, ValueError):
                     agent["card"] = json.loads(agent.pop("card_json"))
-                except (TypeError, ValueError):
-                    pass
             blob["agents"].append(agent)
     return blob

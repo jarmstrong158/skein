@@ -7,7 +7,6 @@ from skein.ingest.parser import parse
 from skein.validator import validate_agent_card, validate_payload
 from tests.conftest import load_fixture
 
-
 # ---------- pure validator ----------
 
 def test_validate_payload_clean_returns_no_warnings():

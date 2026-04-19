@@ -12,8 +12,9 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
-# A2A task lifecycle states (spec 0.3.x). Terminal states matter for failure detection.
-TERMINAL_STATES = frozenset({"completed", "failed", "canceled", "rejected"})
+from ..states import TERMINAL_STATES  # re-export for back-compat
+
+__all_terminal = TERMINAL_STATES  # noqa: F841 (kept so existing imports keep working)
 
 
 @dataclass
@@ -208,9 +209,12 @@ def parse(payload: dict[str, Any], *, protocol_version: str | None = None) -> Pa
         raise ParseError("missing jsonrpc field")
 
     method = payload.get("method")
-    params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
-    result = payload.get("result") if isinstance(payload.get("result"), dict) else None
-    error = payload.get("error") if isinstance(payload.get("error"), dict) else None
+    raw_params = payload.get("params")
+    params: dict[str, Any] = raw_params if isinstance(raw_params, dict) else {}
+    raw_result = payload.get("result")
+    result: dict[str, Any] | None = raw_result if isinstance(raw_result, dict) else None
+    raw_error = payload.get("error")
+    error: dict[str, Any] | None = raw_error if isinstance(raw_error, dict) else None
 
     # Determine effective method: requests carry it; responses inherit from context
     # but we may not know it. Default to "response" if absent.

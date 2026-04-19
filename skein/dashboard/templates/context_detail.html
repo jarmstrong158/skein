@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Context {{ context_id }}{% endblock %}
+{% block content %}
+<h1>Context <code>{{ context_id }}</code></h1>
+<p class="dim">{{ tasks|length }} task{{ '' if tasks|length == 1 else 's' }} sharing this conversation.</p>
+
+<h2>Tasks</h2>
+<table class="data">
+  <thead><tr><th>Task</th><th>State</th><th>Messages</th><th>Created</th><th>Updated</th><th>Error</th></tr></thead>
+  <tbody>
+    {% for t in tasks %}
+    <tr>
+      <td><a href="{{ url_for('dashboard.task_detail', task_id=t.id) }}"><code>{{ t.id }}</code></a></td>
+      <td><span class="state state-{{ t.current_state }}">{{ t.current_state }}</span></td>
+      <td>{{ t.message_count }}</td>
+      <td class="dim">{{ t.created_at }}</td>
+      <td class="dim">{{ t.updated_at }}</td>
+      <td>{{ t.error_code or '' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Merged conversation</h2>
+{% if messages %}
+<ol class="timeline">
+  {% for m in messages %}
+  <li class="timeline-event timeline-message">
+    <div class="event-time">{{ m.occurred_at or m.captured_at }}</div>
+    <div class="event-body">
+      <div class="event-head">
+        <span class="badge dir-{{ m.direction }}">{{ m.direction }}</span>
+        <span class="method">{{ m.method }}</span>
+        {% if m.from_agent_id %}
+          <span class="agent">{{ agents_map.get(m.from_agent_id, m.from_agent_id) }}</span>
+          {% if m.to_agent_id %} &rarr; <span class="agent">{{ agents_map.get(m.to_agent_id, m.to_agent_id) }}</span>{% endif %}
+        {% endif %}
+        <span class="seq">
+          <a href="{{ url_for('dashboard.task_detail', task_id=m.task_id) }}"><code>{{ m.task_id }}</code></a> #{{ m.sequence }}
+        </span>
+      </div>
+      {% if m.trace_id %}<div class="refs">trace: <code>{{ m.trace_id[:16] }}…</code></div>{% endif %}
+    </div>
+  </li>
+  {% endfor %}
+</ol>
+{% else %}
+<p class="empty">No messages in this context.</p>
+{% endif %}
+{% endblock %}

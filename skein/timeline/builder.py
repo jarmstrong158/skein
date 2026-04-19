@@ -14,9 +14,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from typing import Any, Literal
-
 
 EventKind = Literal["message", "state_transition", "artifact"]
 

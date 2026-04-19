@@ -11,8 +11,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from skein.sdk import client as sdk_client
 from skein.sdk import SkeinClient
+from skein.sdk import client as sdk_client
 
 
 class _RecordingHandler(BaseHTTPRequestHandler):
@@ -72,6 +72,7 @@ def test_unreachable_endpoint_does_not_raise_by_default():
 
 
 def test_unreachable_endpoint_raises_when_configured():
+    import urllib.error
     client = SkeinClient("http://127.0.0.1:1", timeout=0.1, raise_on_error=True)
-    with pytest.raises(Exception):
+    with pytest.raises((urllib.error.URLError, OSError, TimeoutError)):
         client.send({"jsonrpc": "2.0", "id": 1, "method": "x"})

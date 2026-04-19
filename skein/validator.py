@@ -13,7 +13,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-
 VALID_TASK_STATES = frozenset({
     "submitted", "working", "input-required",
     "completed", "failed", "canceled", "rejected",
@@ -69,9 +68,8 @@ def validate_payload(payload: dict[str, Any]) -> list[SpecWarning]:
                 ))
 
     # Status-update events
-    if isinstance(result, dict) and result.get("kind") == "status-update":
-        if "taskId" not in result:
-            warnings.append(SpecWarning(
+    if isinstance(result, dict) and result.get("kind") == "status-update" and "taskId" not in result:
+        warnings.append(SpecWarning(
                 severity="error",
                 code="a2a/status-update-missing-task-id",
                 description="status-update event is missing required 'taskId'",

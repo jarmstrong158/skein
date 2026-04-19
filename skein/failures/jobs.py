@@ -39,7 +39,7 @@ def _run_vacuum(db_path: str) -> None:
         conn.close()
 
 
-def start_scheduler(config: "Config") -> BackgroundScheduler:
+def start_scheduler(config: Config) -> BackgroundScheduler:
     sched = BackgroundScheduler(daemon=True, timezone="UTC")
     sched.add_job(
         _run_sweep,

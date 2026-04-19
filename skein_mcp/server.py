@@ -18,7 +18,6 @@ from skein.db import open_db
 
 from . import tools as t
 
-
 DB_PATH = os.environ.get("SKEIN_DB_PATH", "./data/skein.db")
 
 mcp = FastMCP("skein")

@@ -14,10 +14,10 @@ May be promoted to a public API in v1.2+ if user demand warrants it.
 
 from .client import (
     SkeinClient,
+    get_client,
     install,
     send,
     send_agent_card,
-    get_client,
 )
 
 __all__ = ["SkeinClient", "install", "send", "send_agent_card", "get_client"]

@@ -8,7 +8,7 @@
 
 <dl class="task-meta">
   <dt>State</dt><dd><span class="state state-{{ timeline.task.current_state }}">{{ timeline.task.current_state }}</span></dd>
-  {% if timeline.task.context_id %}<dt>Context</dt><dd><code>{{ timeline.task.context_id }}</code></dd>{% endif %}
+  {% if timeline.task.context_id %}<dt>Context</dt><dd><a href="{{ url_for('dashboard.context_detail', context_id=timeline.task.context_id) }}"><code>{{ timeline.task.context_id }}</code></a></dd>{% endif %}
   <dt>Created</dt><dd class="dim">{{ timeline.task.created_at }}</dd>
   <dt>Updated</dt><dd class="dim">{{ timeline.task.updated_at }}</dd>
   {% if timeline.task.terminal_at %}<dt>Terminal</dt><dd class="dim">{{ timeline.task.terminal_at }}</dd>{% endif %}

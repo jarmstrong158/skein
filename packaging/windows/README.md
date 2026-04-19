@@ -13,8 +13,8 @@ Two-step build: PyInstaller produces the bundled `dist/skein/` directory, NSIS w
 pyinstaller packaging/windows/skein.spec --clean --noconfirm
 # -> dist/skein/skein.exe, dist/skein/skein-mcp.exe, + dependencies
 
-makensis packaging/windows/skein.nsi
-# -> dist/Skein-0.1.0-Setup.exe
+makensis /DAPP_VERSION=$(python -c "from skein import __version__; print(__version__)") packaging/windows/skein.nsi
+# -> dist/Skein-X.Y.Z-Setup.exe
 ```
 
 ## What ships in the bundle

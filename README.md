@@ -3,17 +3,21 @@
 [![CI](https://github.com/jarmstrong158/skein/actions/workflows/ci.yml/badge.svg)](https://github.com/jarmstrong158/skein/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Ruff](https://img.shields.io/badge/lint-ruff-46a3ff.svg)](https://github.com/astral-sh/ruff)
+[![mypy](https://img.shields.io/badge/typed-mypy-2a6bb5.svg)](https://mypy-lang.org/)
 
-**When your local multi-agent A2A system breaks, Skein tells you what happened in plain English.** Drop your webhook URL into your agents, run your workflow, and ask Claude what failed. No cloud, no accounts, no setup beyond `pip install`.
+**When your local multi-agent A2A system breaks, Skein tells you what happened in plain English.** Drop a webhook URL into your agents, run your workflow, and ask Claude what failed. No cloud, no accounts, no setup beyond `pip install`.
+
+![Overview dashboard](docs/screenshots/01_overview.png)
 
 ## What Skein is
 
 A local-first, zero-config debugger for multi-agent [A2A](https://github.com/a2aproject/A2A) systems with conversational Claude integration. Built for the developer who wants to `pip install` something and immediately see what their agents are saying to each other.
 
 - **Local-first.** SQLite, runs on `localhost`, no auth, no telemetry.
-- **Zero-config ingestion.** One webhook endpoint. Point it at your agents, you're done.
+- **Zero-config ingestion.** One webhook endpoint. Point your agents at it, you're done.
 - **Conversational debugging.** MCP server lets Claude Desktop or Claude Code answer "what failed in the last hour" against your captured traces.
-- **Spec-aware.** Honors A2A `contextId`, `referenceTaskIds`, and OTLP trace propagation. Cascade detection is deterministic, not heuristic.
+- **Spec-aware.** Honors A2A `contextId`, `referenceTaskIds`, and W3C `traceparent`. Cascade detection is deterministic, not heuristic.
 - **Windows-packaged.** Single-file installer ships Python and Skein together; no toolchain required for end users.
 
 ## What Skein is *not*
@@ -29,6 +33,54 @@ Skein deliberately does **not** compete with these — use them for what they're
 | OWASP AOS | You're building a guardian-agent observability layer at the protocol level. |
 
 Skein is smaller, more opinionated, and more narrowly useful than any of these. That's the feature.
+
+---
+
+## See it
+
+### One task, full timeline — messages, state transitions, artifacts, cascade
+
+A failed task with the explicit error, an OTLP trace ID per message, and the cascade table showing which other tasks were affected.
+
+![Task detail with cascade](docs/screenshots/03_task_detail.png)
+
+### Whole conversation, merged across tasks
+
+A2A's `contextId` groups multiple tasks into one logical conversation. Skein assembles them into a single chronological view.
+
+![Context detail](docs/screenshots/05_context_detail.png)
+
+### Tasks page — filter by state, agent, or free-text search
+
+Auto-refreshes via HTMX. Search hits task IDs, context IDs, error fields, and raw payload bodies.
+
+![Tasks page](docs/screenshots/02_tasks.png)
+
+### Failures grouped by error code
+
+`skein/timeout` is the synthetic code raised by the stale-task sweeper.
+
+![Failures page](docs/screenshots/06_failures.png)
+
+### Spec compliance warnings — separate from operational failures
+
+A spec warning says "this message was malformed"; an operational failure says "this agent's work failed". Different lists, different mental models.
+
+![Spec warnings page](docs/screenshots/07_spec_warnings.png)
+
+### Conversational debugging via Claude (MCP)
+
+Claude Desktop / Claude Code with the Skein MCP server connected:
+
+> **You:** what failed in the last hour?
+>
+> **Claude:** *(calls `get_recent_failures`)* One failure: `task-research-review` failed at 19:29 UTC with error `-32011` — "Reviewer auth token expired (401 Unauthorized)". It was in context `ctx-research-2026-04-19`. Want me to pull the full timeline?
+>
+> **You:** yes
+>
+> **Claude:** *(calls `get_task_timeline`)* The orchestrator sent the review request to the reviewer agent at 19:29:03 referencing `task-research-draft`. The reviewer transitioned `submitted → working → failed` over 30 seconds before the 401. The failure cascaded to `task-research-notify` which alerted #oncall-research successfully. The auth token issue is the root cause — the reviewer's never recovered.
+
+---
 
 ## Install
 
@@ -46,11 +98,11 @@ A pre-built `Skein-X.Y.Z-Setup.exe` is published with each GitHub release for us
 ## Quickstart
 
 ```bash
-# Run the dashboard + ingest server (with the stale-task sweeper running every 60s)
+# Run the dashboard + ingest server (with stale-task sweeper running every 60s)
 skein serve
 # -> http://127.0.0.1:5050
 
-# In another terminal, send a synthetic 3-agent A2A workflow
+# In another terminal, send a synthetic 8-task / 3-context A2A workflow
 skein demo
 
 # Open the dashboard at http://127.0.0.1:5050
@@ -69,7 +121,7 @@ To capture from your own A2A agents, have each agent POST every JSON-RPC payload
 }
 ```
 
-If your A2A library captures the W3C `traceparent` HTTP header, forward it as the optional top-level field — Skein also auto-extracts trace IDs from `Message.metadata` / `Task.metadata` (the A2A extension pattern), so for many setups you don't need to do anything.
+Skein auto-extracts trace IDs from `Message.metadata` / `Task.metadata` (the A2A extension pattern), so for many setups you don't need to forward `traceparent` separately. If your A2A library captures the W3C HTTP header before reconstructing the JSON-RPC body (a common pattern — see [kagent#1295](https://github.com/kagent-dev/kagent/issues/1295)), pass it as the optional top-level field above.
 
 A typical integration is a one-line wrapper around your existing HTTP transport that does the POST. If you'd rather use a library that decorates your agent code, **use [AOP](https://github.com/aop-protocol/aop)** — it spans more protocols and has a richer SDK than anything Skein will ship.
 
@@ -92,6 +144,14 @@ Add to your Claude Desktop or Claude Code MCP config:
 
 Six tools: `get_recent_failures`, `get_task_timeline`, `list_active_agents`, `get_agent_activity`, `query_failure_patterns`, `export_trace`.
 
+## CLI
+
+| Command | Purpose |
+|---|---|
+| `skein serve` | Run the dashboard + ingest server + background scheduler. |
+| `skein demo` | Send a synthetic 8-task / 3-context A2A workflow to a running Skein. Idempotent. |
+| `skein clean --older-than 7d` | Delete terminal tasks (and their messages, transitions, artifacts, warnings) older than the cutoff. Supports `--dry-run`. |
+
 ## HTTP API
 
 | Method | Path | Purpose |
@@ -100,37 +160,46 @@ Six tools: `get_recent_failures`, `get_task_timeline`, `list_active_agents`, `ge
 | `POST` | `/trace/agent_card` | Upsert an agent card (identity + skills) |
 | `GET`  | `/trace/health` | `{status, db_size_mb, message_count_24h}` |
 | `GET`  | `/` | Dashboard overview |
-| `GET`  | `/tasks` | Filterable task list (`?state=`, `?agent=`) |
+| `GET`  | `/tasks` | Filterable, searchable, auto-refreshing task list |
 | `GET`  | `/tasks/<id>` | Task timeline (HTML; add `?format=json` for JSON) |
+| `GET`  | `/contexts` | A2A `contextId` groups |
+| `GET`  | `/contexts/<id>` | Merged conversation across tasks in a context |
 | `GET`  | `/agents` | Agent list |
 | `GET`  | `/failures` | Failures grouped by error code |
 | `GET`  | `/spec-warnings` | Passive A2A spec compliance warnings |
 
 ## Spec compliance
 
-Skein passively validates every ingested payload against the A2A spec and records any violations as **spec warnings** — distinct from operational failures. A spec warning says "this message itself was malformed"; an operational failure says "the agent's work failed". They're surfaced in their own dashboard page and badged on individual task detail pages.
+Skein passively validates every ingested payload against the A2A spec and records any violations as **spec warnings** — distinct from operational failures. A spec warning says "this message was malformed"; an operational failure says "this agent's work failed". They're surfaced in their own dashboard page and badged on individual task detail pages.
 
 ## Architecture intent
 
-Skein's ingestion layer is architecturally pluggable. v1 ships a single source — the A2A webhook endpoint — but the parser/normalizer split was designed so additional sources (AOP, OWASP AOS, OTLP receiver) can be added without touching the storage or dashboard. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Skein's ingestion layer is architecturally pluggable. v1 ships a single source — the A2A webhook endpoint — but the parser/normalizer split was designed so additional sources (AOP, OWASP AOS, an OTLP receiver) can be added without touching the storage or dashboard. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Tests
 
 ```bash
-pytest -q
+pytest -q       # 71 tests
+ruff check .    # lint
+mypy skein skein_mcp   # type-check
 ```
+
+CI runs all three across Python 3.10/3.11/3.12 on Ubuntu and Windows.
 
 ## Roadmap
 
 - **Phase 1 — Capture spine** ✅ ingest webhook, SQLite schema, parser/normalizer
 - **Phase 2 — Timeline + dashboard** ✅ Flask + HTMX dashboard, dark-themed timeline view
-- **Phase 3 — Failure detection** ✅ stale-task sweep, cascade detection, `/failures` page, `skein demo` + `skein serve` CLI
+- **Phase 3 — Failure detection** ✅ stale-task sweep, cascade detection, `/failures`, `skein demo`/`serve` CLI
 - **Phase 4 — MCP server** ✅ 6 tools for Claude Desktop / Claude Code
 - **Phase 5 — Packaging + release** ✅ PyInstaller spec, NSIS installer, GitHub Actions CI
-- **Phase 6 — OTLP-aware ingestion + spec checks** ✅ W3C trace context capture from A2A metadata, passive spec validator with dedicated `/spec-warnings` page
+- **Phase 6 — OTLP-aware ingestion + spec checks** ✅ W3C trace context capture, passive `/spec-warnings`
+- **Phase 7 — UX polish** ✅ `/contexts` view, task search, HTMX auto-refresh, `skein clean`, screenshots, `ruff`+`mypy` in CI
 - **v1.1 — OTLP export.** Forward captured traces as OTLP to Datadog / Jaeger / Honeycomb. Skein stays a local capture layer that can feed enterprise tooling when users scale up.
 - **v1.2+** Optional Python SDK for decorator-based capture (only if users specifically request it; the recommended path remains the webhook).
 - **Later, demand-driven.** Additional ingestion sources (AOP, OWASP AOS) plugged into the existing parser/normalizer split.
+
+See [CHANGELOG.md](CHANGELOG.md) for the per-release detail.
 
 ## Contributing
 

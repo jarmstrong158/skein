@@ -11,8 +11,8 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any
 
-from ..validator import SpecWarning, validate_agent_card, validate_payload
-from .parser import ParsedEvent, payload_hash, TERMINAL_STATES
+from ..validator import validate_agent_card, validate_payload
+from .parser import TERMINAL_STATES, ParsedEvent, payload_hash
 
 
 def _now_iso() -> str:

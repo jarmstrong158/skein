@@ -11,7 +11,6 @@ from skein.app import create_app
 from skein.config import Config
 from skein.db import open_db
 
-
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "traces"
 
 

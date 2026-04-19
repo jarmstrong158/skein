@@ -20,7 +20,7 @@ DEFAULT_ENDPOINT = "http://127.0.0.1:5050"
 DEFAULT_TIMEOUT = 1.0  # seconds — keep low so trace failures don't stall agents
 DEFAULT_PROTOCOL_VERSION = "0.3.1"
 
-_client: "SkeinClient | None" = None
+_client: SkeinClient | None = None
 _client_lock = threading.Lock()
 
 
@@ -82,13 +82,8 @@ def install(
     timeout: float = DEFAULT_TIMEOUT,
     protocol_version: str = DEFAULT_PROTOCOL_VERSION,
     raise_on_error: bool = False,
-    patch_a2a_sdk: bool = False,
 ) -> SkeinClient:
-    """Install (or replace) the process-wide Skein client.
-
-    If `patch_a2a_sdk=True` and the `a2a-sdk` package is importable, monkey-patch
-    its client/server entry points to auto-capture. Returns the active client.
-    """
+    """Install (or replace) the process-wide Skein client. Returns it."""
     global _client
     with _client_lock:
         _client = SkeinClient(
@@ -97,12 +92,6 @@ def install(
             protocol_version=protocol_version,
             raise_on_error=raise_on_error,
         )
-    if patch_a2a_sdk:
-        try:
-            from . import a2a_patch
-            a2a_patch.install(_client)
-        except Exception as e:
-            log.warning("a2a-sdk monkey-patch failed (a2a-sdk may not be installed): %s", e)
     return _client
 
 

@@ -10,7 +10,6 @@ from ..db import get_db
 from .normalizer import store, upsert_agent_card
 from .parser import ParseError, _parse_traceparent, parse
 
-
 bp = Blueprint("ingest", __name__, url_prefix="/trace")
 
 

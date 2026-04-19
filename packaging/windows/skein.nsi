@@ -5,7 +5,11 @@
 ;              that produced dist\skein\
 
 !define APP_NAME       "Skein"
-!define APP_VERSION    "0.1.0"
+; Pass in via:  makensis /DAPP_VERSION=X.Y.Z packaging/windows/skein.nsi
+; Default falls back to 0.0.0 to make accidental builds obviously unversioned.
+!ifndef APP_VERSION
+  !define APP_VERSION  "0.0.0"
+!endif
 !define APP_PUBLISHER  "Jonny Armstrong"
 !define APP_URL        "https://github.com/jarmstrong158/skein"
 !define APP_EXE        "skein.exe"

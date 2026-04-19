@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Contexts{% endblock %}
+{% block content %}
+<h1>Contexts</h1>
+<p class="dim">A2A <code>contextId</code> groups related tasks into one conversation. Click a context to see the full merged timeline.</p>
+{% if contexts %}
+<table class="data">
+  <thead><tr><th>Context</th><th>Tasks</th><th>Active</th><th>Failed</th><th>Started</th><th>Last activity</th></tr></thead>
+  <tbody>
+    {% for c in contexts %}
+    <tr>
+      <td><a href="{{ url_for('dashboard.context_detail', context_id=c.context_id) }}"><code>{{ c.context_id }}</code></a></td>
+      <td>{{ c.task_count }}</td>
+      <td>{% if c.active_count %}<span class="state state-working">{{ c.active_count }}</span>{% else %}—{% endif %}</td>
+      <td>{% if c.failed_count %}<span class="state state-failed">{{ c.failed_count }}</span>{% else %}—{% endif %}</td>
+      <td class="dim">{{ c.started_at }}</td>
+      <td class="dim">{{ c.last_activity_at }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No contexts captured yet.</p>
+{% endif %}
+{% endblock %}

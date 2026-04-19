@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
-
-_DEFAULTS = {
+_DEFAULTS: dict[str, Any] = {
     "db_path": "./data/skein.db",
     "host": "127.0.0.1",
     "port": 5050,
@@ -37,7 +37,7 @@ class Config:
     artifact_storage_dir: str = _DEFAULTS["artifact_storage_dir"]
 
     @classmethod
-    def load(cls, path: str | os.PathLike | None = None) -> "Config":
+    def load(cls, path: str | os.PathLike | None = None) -> Config:
         data = dict(_DEFAULTS)
         if path is not None:
             p = Path(path)
