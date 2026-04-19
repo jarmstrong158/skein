@@ -1,0 +1,8 @@
+{
+  "db_path": "./data/skein.db",
+  "host": "127.0.0.1",
+  "port": 5050,
+  "default_task_timeout_seconds": 300,
+  "artifact_inline_max_bytes": 65536,
+  "artifact_storage_dir": "./data/artifacts"
+}

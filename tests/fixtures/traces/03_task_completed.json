@@ -1,0 +1,16 @@
+{
+  "jsonrpc": "2.0",
+  "id": "req-1",
+  "result": {
+    "id": "task-abc",
+    "contextId": "ctx-001",
+    "status": {"state": "completed", "timestamp": "2026-04-19T10:00:05Z"},
+    "artifacts": [
+      {
+        "name": "summary",
+        "mimeType": "text/plain",
+        "parts": [{"kind": "text", "text": "Q1 sales: $1.2M, up 8% YoY."}]
+      }
+    ]
+  }
+}

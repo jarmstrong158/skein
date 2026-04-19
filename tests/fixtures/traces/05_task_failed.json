@@ -1,0 +1,10 @@
+{
+  "jsonrpc": "2.0",
+  "id": "req-2",
+  "result": {
+    "id": "task-def",
+    "contextId": "ctx-001",
+    "status": {"state": "failed", "timestamp": "2026-04-19T10:00:12Z"}
+  },
+  "error": {"code": -32001, "message": "Historical data source unavailable"}
+}

@@ -1,0 +1,17 @@
+{
+  "jsonrpc": "2.0",
+  "id": "req-2",
+  "method": "message/send",
+  "params": {
+    "message": {
+      "messageId": "msg-002",
+      "role": "user",
+      "parts": [{"kind": "text", "text": "Now compare to Q1 last year."}],
+      "taskId": "task-def",
+      "contextId": "ctx-001",
+      "referenceTaskIds": ["task-abc"],
+      "agentId": "https://orchestrator.example/agent",
+      "timestamp": "2026-04-19T10:00:10Z"
+    }
+  }
+}

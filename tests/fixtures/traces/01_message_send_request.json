@@ -1,0 +1,17 @@
+{
+  "jsonrpc": "2.0",
+  "id": "req-1",
+  "method": "message/send",
+  "params": {
+    "message": {
+      "messageId": "msg-001",
+      "role": "user",
+      "parts": [{"kind": "text", "text": "Summarize quarterly sales."}],
+      "taskId": "task-abc",
+      "contextId": "ctx-001",
+      "agentId": "https://orchestrator.example/agent",
+      "timestamp": "2026-04-19T10:00:00Z"
+    },
+    "toAgentId": "https://analyst.example/agent"
+  }
+}

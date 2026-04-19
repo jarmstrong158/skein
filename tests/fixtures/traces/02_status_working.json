@@ -1,0 +1,10 @@
+{
+  "jsonrpc": "2.0",
+  "id": "evt-1",
+  "result": {
+    "kind": "status-update",
+    "taskId": "task-abc",
+    "contextId": "ctx-001",
+    "status": {"state": "working", "timestamp": "2026-04-19T10:00:01Z"}
+  }
+}

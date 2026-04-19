@@ -1,0 +1,11 @@
+{
+  "name": "Analyst Agent",
+  "url": "https://analyst.example/agent",
+  "version": "1.0.0",
+  "description": "Analyzes business data",
+  "skills": [
+    {"id": "summarize_sales", "name": "Summarize sales data"}
+  ],
+  "defaultInputModes": ["text"],
+  "defaultOutputModes": ["text"]
+}
