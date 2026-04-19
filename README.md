@@ -23,18 +23,32 @@ python -m venv .venv
 pip install -e ".[dev]"
 cp config.example.json config.json
 
-# Run the server
-python -m skein.app
+# Run the server (with stale-task sweeper running every 60s)
+skein serve
 # -> http://127.0.0.1:5050
 
-# Ingest an A2A payload
+# In another terminal, send a synthetic 3-agent A2A workflow
+skein demo
+
+# Open http://127.0.0.1:5050 to inspect
+
+# Or ingest your own A2A payload directly:
 curl -X POST http://127.0.0.1:5050/trace/ingest \
   -H "Content-Type: application/json" \
   -d '{"payload": {...A2A JSON-RPC...}, "direction": "outbound"}'
+```
 
-# Inspect
-curl http://127.0.0.1:5050/trace/health
-sqlite3 data/skein.db "SELECT * FROM tasks"
+### Use the SDK from your own A2A app
+
+```python
+import skein
+skein.install(endpoint="http://127.0.0.1:5050")
+
+# For each A2A JSON-RPC payload your app sends or receives:
+skein.send(payload, direction="outbound")  # or "inbound"
+
+# Once per agent identity:
+skein.send_agent_card(your_agent_card)
 ```
 
 ## Endpoints (Phase 1)
@@ -57,7 +71,7 @@ pytest -q
 
 - **Phase 1 — Capture spine** ✅ ingest webhook, SQLite schema, parser/normalizer, tests
 - **Phase 2 — Timeline + dashboard** ✅ Flask + HTMX dashboard, server-rendered timeline view, dark theme
-- **Phase 3 — Failure detection + SDK** stale-task sweep, cascade detection, Python SDK monkey-patch of `a2a-sdk`, `skein demo` toy agent
+- **Phase 3 — Failure detection + SDK** ✅ stale-task sweep (APScheduler), cascade detection via `referenceTaskIds`+`contextId`, `/failures` page, Python SDK with optional `a2a-sdk` monkey-patch, `skein demo` toy agent, `skein serve` CLI
 - **Phase 4 — MCP server** 6 tools for Claude Desktop / Claude Code
 - **Phase 5 — Packaging + release** PyInstaller bundle, NSIS installer, GitHub Actions CI, v1.0
 

@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Failures{% endblock %}
+{% block content %}
+<h1>Failures</h1>
+
+<h2>Patterns ({{ days }}d)</h2>
+{% if patterns %}
+<table class="data">
+  <thead><tr><th>Error code</th><th>Count</th><th>Latest</th><th>Examples</th></tr></thead>
+  <tbody>
+    {% for p in patterns %}
+    <tr>
+      <td><code>{{ p.error_code }}</code></td>
+      <td>{{ p.count }}</td>
+      <td class="dim">{{ p.latest_at }}</td>
+      <td>
+        {% for tid in p.example_task_ids %}
+          <a href="{{ url_for('dashboard.task_detail', task_id=tid) }}"><code>{{ tid }}</code></a>{% if not loop.last %}, {% endif %}
+        {% endfor %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No failures in the last {{ days }} days.</p>
+{% endif %}
+
+<h2>Recent ({{ hours }}h)</h2>
+{% if recent %}
+<table class="data">
+  <thead><tr><th>Task</th><th>State</th><th>Error</th><th>Message</th><th>When</th></tr></thead>
+  <tbody>
+    {% for r in recent %}
+    <tr>
+      <td><a href="{{ url_for('dashboard.task_detail', task_id=r.id) }}"><code>{{ r.id }}</code></a></td>
+      <td><span class="state state-{{ r.current_state }}">{{ r.current_state }}</span></td>
+      <td><code>{{ r.error_code or '' }}</code></td>
+      <td>{{ r.error_message or '' }}</td>
+      <td class="dim">{{ r.updated_at }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No failures in the last {{ hours }} hours.</p>
+{% endif %}
+{% endblock %}

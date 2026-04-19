@@ -7,6 +7,7 @@ import json
 from flask import Blueprint, abort, jsonify, render_template, request
 
 from ..db import get_db
+from ..failures.detector import cascade_for, failure_patterns, recent_failures
 from ..timeline.builder import build, to_dict
 
 
@@ -137,9 +138,28 @@ def task_detail(task_id: str):
         ).fetchall():
             agents_map[r["id"]] = r["name"] or r["id"]
 
+    cascade = []
+    if timeline.task and timeline.task.get("current_state") in ("failed", "rejected", "canceled"):
+        cascade = cascade_for(conn, task_id)
+
     return render_template(
         "task_detail.html",
         timeline=timeline,
         agents_map=agents_map,
+        cascade=cascade,
         json=json,
+    )
+
+
+@bp.get("/failures")
+def failures():
+    conn = get_db()
+    hours = int(request.args.get("hours", "24"))
+    days = int(request.args.get("days", "7"))
+    return render_template(
+        "failures.html",
+        recent=recent_failures(conn, hours=hours, limit=100),
+        patterns=failure_patterns(conn, days=days),
+        hours=hours,
+        days=days,
     )

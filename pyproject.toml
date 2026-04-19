@@ -22,6 +22,9 @@ dev = [
     "pytest-cov>=5.0",
 ]
 
+[project.scripts]
+skein = "skein.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/jarmstrong158/skein"
 Repository = "https://github.com/jarmstrong158/skein"

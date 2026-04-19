@@ -23,6 +23,25 @@
   {% endif %}
 </dl>
 
+{% if cascade %}
+<h2>Cascade</h2>
+<p class="dim">Other tasks affected by this failure (via referenceTaskIds or shared contextId within 5 min).</p>
+<table class="data">
+  <thead><tr><th>Task</th><th>State</th><th>Error</th><th>Via</th><th>When</th></tr></thead>
+  <tbody>
+    {% for c in cascade %}
+    <tr>
+      <td><a href="{{ url_for('dashboard.task_detail', task_id=c.task_id) }}"><code>{{ c.task_id }}</code></a></td>
+      <td><span class="state state-{{ c.current_state }}">{{ c.current_state }}</span></td>
+      <td><code>{{ c.error_code or '' }}</code></td>
+      <td><span class="badge">{{ c.via }}</span></td>
+      <td class="dim">{{ c.updated_at }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
 <h2>Timeline</h2>
 {% if timeline.events %}
 <ol class="timeline">
