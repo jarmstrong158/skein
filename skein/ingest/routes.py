@@ -8,7 +8,7 @@ from flask import Blueprint, current_app, jsonify, request
 
 from ..db import get_db
 from .normalizer import store, upsert_agent_card
-from .parser import ParseError, parse
+from .parser import ParseError, _parse_traceparent, parse
 
 
 bp = Blueprint("ingest", __name__, url_prefix="/trace")
@@ -32,6 +32,17 @@ def ingest():
         event = parse(payload, protocol_version=protocol_version)
     except ParseError as e:
         return jsonify({"error": f"parse error: {e}"}), 400
+
+    # If the caller forwarded the HTTP `traceparent` header (via the body's
+    # top-level `traceparent` field), honor it when the JSON-RPC payload
+    # itself didn't carry trace context inside metadata.
+    body_tp = body.get("traceparent")
+    if isinstance(body_tp, str) and not event.message.traceparent:
+        tid, sid = _parse_traceparent(body_tp)
+        if tid:
+            event.message.traceparent = body_tp
+            event.message.trace_id = tid
+            event.message.span_id = sid
 
     conn = get_db()
     try:

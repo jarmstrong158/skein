@@ -50,6 +50,9 @@ def overview():
         "messages_24h": conn.execute(
             "SELECT COUNT(*) AS c FROM messages WHERE captured_at > datetime('now', '-1 day')"
         ).fetchone()["c"],
+        "spec_warnings_24h": conn.execute(
+            "SELECT COUNT(*) AS c FROM spec_warnings WHERE raised_at > datetime('now', '-1 day')"
+        ).fetchone()["c"],
     }
     recent = conn.execute(
         """
@@ -142,13 +145,46 @@ def task_detail(task_id: str):
     if timeline.task and timeline.task.get("current_state") in ("failed", "rejected", "canceled"):
         cascade = cascade_for(conn, task_id)
 
+    spec_warnings = conn.execute(
+        """
+        SELECT severity, code, description, field_path, message_id, raised_at
+          FROM spec_warnings WHERE task_id = ?
+         ORDER BY id
+        """,
+        (task_id,),
+    ).fetchall()
+
     return render_template(
         "task_detail.html",
         timeline=timeline,
         agents_map=agents_map,
         cascade=cascade,
+        spec_warnings=spec_warnings,
         json=json,
     )
+
+
+@bp.get("/spec-warnings")
+def spec_warnings():
+    conn = get_db()
+    rows = conn.execute(
+        """
+        SELECT w.id, w.severity, w.code, w.description, w.field_path,
+               w.task_id, w.message_id, w.agent_id, w.raised_at
+          FROM spec_warnings w
+         ORDER BY w.raised_at DESC
+         LIMIT 200
+        """
+    ).fetchall()
+    by_code = conn.execute(
+        """
+        SELECT code, severity, COUNT(*) AS c
+          FROM spec_warnings
+         GROUP BY code, severity
+         ORDER BY c DESC
+        """
+    ).fetchall()
+    return render_template("spec_warnings.html", warnings=rows, by_code=by_code)
 
 
 @bp.get("/failures")

@@ -53,7 +53,8 @@ def build(conn: sqlite3.Connection, task_id: str) -> Timeline | None:
     msg_rows = conn.execute(
         """
         SELECT id, sequence, direction, method, from_agent_id, to_agent_id,
-               payload_json, protocol_version, captured_at, occurred_at
+               payload_json, protocol_version, captured_at, occurred_at,
+               trace_id, span_id, traceparent
           FROM messages
          WHERE task_id = ?
          ORDER BY sequence
@@ -97,6 +98,9 @@ def build(conn: sqlite3.Connection, task_id: str) -> Timeline | None:
                     "payload": payload,
                     "captured_at": r["captured_at"],
                     "occurred_at": r["occurred_at"],
+                    "trace_id": r["trace_id"],
+                    "span_id": r["span_id"],
+                    "traceparent": r["traceparent"],
                     "references": refs_by_msg.get(r["id"], []),
                 },
             )

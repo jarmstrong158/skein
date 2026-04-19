@@ -11,6 +11,7 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any
 
+from ..validator import SpecWarning, validate_agent_card, validate_payload
 from .parser import ParsedEvent, payload_hash, TERMINAL_STATES
 
 
@@ -176,8 +177,9 @@ def store(
             INSERT INTO messages (
                 task_id, sequence, direction, method, from_agent_id, to_agent_id,
                 payload_json, payload_hash, protocol_version, extra_json,
-                captured_at, occurred_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                captured_at, occurred_at,
+                trace_id, span_id, traceparent
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 task.id,
@@ -192,6 +194,9 @@ def store(
                 None,
                 captured_at,
                 msg.occurred_at,
+                msg.trace_id,
+                msg.span_id,
+                msg.traceparent,
             ),
         )
         message_id = cur.lastrowid
@@ -200,6 +205,15 @@ def store(
             conn.execute(
                 "INSERT OR IGNORE INTO message_references (message_id, referenced_task_id) VALUES (?, ?)",
                 (message_id, ref),
+            )
+
+        for w in validate_payload(msg.payload):
+            conn.execute(
+                """
+                INSERT INTO spec_warnings (task_id, message_id, severity, code, description, field_path, raised_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (task.id, message_id, w.severity, w.code, w.description, w.field_path, captured_at),
             )
 
         new_state = task.state
@@ -266,5 +280,13 @@ def upsert_agent_card(
              WHERE id = ?
             """,
             (card.get("name"), card.get("url"), card_json, captured_at, agent_id),
+        )
+    for w in validate_agent_card(card):
+        conn.execute(
+            """
+            INSERT INTO spec_warnings (task_id, message_id, agent_id, severity, code, description, field_path, raised_at)
+            VALUES (NULL, NULL, ?, ?, ?, ?, ?, ?)
+            """,
+            (agent_id, w.severity, w.code, w.description, w.field_path, captured_at),
         )
     return agent_id

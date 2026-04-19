@@ -4,26 +4,33 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
-**Local-first observability for [A2A](https://github.com/a2aproject/A2A) multi-agent message flows.** Captures the JSON-RPC traffic between agents and renders it as readable timelines with cascade-aware failure detection — so you stop reconstructing conversations from log dumps by hand.
+**When your local multi-agent A2A system breaks, Skein tells you what happened in plain English.** Drop your webhook URL into your agents, run your workflow, and ask Claude what failed. No cloud, no accounts, no setup beyond `pip install`.
 
-## Why
+## What Skein is
 
-Every serious A2A developer today reconstructs conversation flows from JSON-RPC log dumps by hand. Logs look like a dozen people chatting in different Slack channels at once. Skein captures those flows once and lets you read them as a timeline, query them via Claude through MCP, and pinpoint failures fast.
+A local-first, zero-config debugger for multi-agent [A2A](https://github.com/a2aproject/A2A) systems with conversational Claude integration. Built for the developer who wants to `pip install` something and immediately see what their agents are saying to each other.
 
-## What's in the box
+- **Local-first.** SQLite, runs on `localhost`, no auth, no telemetry.
+- **Zero-config ingestion.** One webhook endpoint. Point it at your agents, you're done.
+- **Conversational debugging.** MCP server lets Claude Desktop or Claude Code answer "what failed in the last hour" against your captured traces.
+- **Spec-aware.** Honors A2A `contextId`, `referenceTaskIds`, and OTLP trace propagation. Cascade detection is deterministic, not heuristic.
+- **Windows-packaged.** Single-file installer ships Python and Skein together; no toolchain required for end users.
 
-| | |
+## What Skein is *not*
+
+Skein deliberately does **not** compete with these — use them for what they're good at:
+
+| Tool | Better choice when... |
 |---|---|
-| **Live dashboard** | Flask web UI: active tasks, recent failures, agent activity, auto-refreshing overview |
-| **Timeline view** | For any `taskId`, the full ordered conversation between agents — messages, state transitions, artifacts, cascade |
-| **Failure detection** | Stale-task sweeper, cascade detection via `referenceTaskIds`+`contextId` (deterministic, per A2A spec) |
-| **MCP server** | Six tools so Claude can answer "what failed in the last hour", "show me task X", "what's the most common error this week" |
-| **Python SDK** | 3-line install; optional monkey-patch of `a2a-sdk` for zero-call-site auto-capture |
-| **Demo workflow** | `skein demo` ships a synthetic 3-agent A2A workflow exercising success, failure, and cascade |
+| [A2A Inspector](https://github.com/a2aproject/a2a-inspector) | You're developing a single A2A agent and want spec-compliance checks + a live chat debug console. |
+| [AOP](https://github.com/aop-protocol/aop) | You want decorator-based instrumentation across MCP, LangChain, CrewAI, A2A, AP2 in one SDK. |
+| [Agent Gateway](https://agentgateway.dev) | You're running A2A in production and need a routing/security proxy. |
+| OpenTelemetry + Datadog/Jaeger/Honeycomb | You're operating at scale and want enterprise observability with retention and alerting. |
+| OWASP AOS | You're building a guardian-agent observability layer at the protocol level. |
+
+Skein is smaller, more opinionated, and more narrowly useful than any of these. That's the feature.
 
 ## Install
-
-### Pip (recommended)
 
 ```bash
 git clone https://github.com/jarmstrong158/skein
@@ -34,47 +41,37 @@ pip install -e ".[dev,mcp]"
 cp config.example.json config.json
 ```
 
-### Windows installer (no Python required)
-
-Pre-built `Skein-X.Y.Z-Setup.exe` is published with each GitHub release. Bundles Python and Skein into a single installer; see [packaging/windows/README.md](packaging/windows/README.md) for build details.
+A pre-built `Skein-X.Y.Z-Setup.exe` is published with each GitHub release for users who don't want a Python toolchain. See [packaging/windows/README.md](packaging/windows/README.md) for build details.
 
 ## Quickstart
 
 ```bash
-# Run the server (with the stale-task sweeper running every 60s)
+# Run the dashboard + ingest server (with the stale-task sweeper running every 60s)
 skein serve
 # -> http://127.0.0.1:5050
 
 # In another terminal, send a synthetic 3-agent A2A workflow
 skein demo
 
-# Open the dashboard at http://127.0.0.1:5050 to see:
-#   - 3 agents registered
-#   - 1 successful task with artifact
-#   - 1 explicit failure with referenceTaskIds
-#   - 1 cascaded failure
-#   - 1 stuck task that the stale-sweep marks failed within ~60s
+# Open the dashboard at http://127.0.0.1:5050
 ```
 
-### Use the SDK from your own A2A app
+To capture from your own A2A agents, have each agent POST every JSON-RPC payload it sends or receives to `http://127.0.0.1:5050/trace/ingest`:
 
-```python
-import skein
-skein.install(endpoint="http://127.0.0.1:5050")
-
-# For each A2A JSON-RPC payload your app sends or receives:
-skein.send(payload, direction="outbound")  # or "inbound"
-
-# Once per agent identity:
-skein.send_agent_card(your_agent_card)
+```jsonc
+// POST /trace/ingest
+{
+  "payload": { /* the A2A JSON-RPC envelope, verbatim */ },
+  "direction": "outbound",                     // or "inbound", relative to the capturing agent
+  "captured_at": "2026-04-19T10:00:00Z",       // optional; server stamps if absent
+  "protocol_version": "0.3.1",                 // optional; tagged on the message
+  "traceparent": "00-...-...-01"               // optional; W3C trace context
+}
 ```
 
-If you use the official `a2a-sdk`, add `patch_a2a_sdk=True` and skip the per-call instrumentation:
+If your A2A library captures the W3C `traceparent` HTTP header, forward it as the optional top-level field — Skein also auto-extracts trace IDs from `Message.metadata` / `Task.metadata` (the A2A extension pattern), so for many setups you don't need to do anything.
 
-```python
-skein.install(endpoint="http://127.0.0.1:5050", patch_a2a_sdk=True)
-# ...your existing a2a-sdk code captures automatically.
-```
+A typical integration is a one-line wrapper around your existing HTTP transport that does the POST. If you'd rather use a library that decorates your agent code, **use [AOP](https://github.com/aop-protocol/aop)** — it spans more protocols and has a richer SDK than anything Skein will ship.
 
 ## Ask Claude about your traces (MCP)
 
@@ -99,7 +96,7 @@ Six tools: `get_recent_failures`, `get_task_timeline`, `list_active_agents`, `ge
 
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/trace/ingest` | Ingest one A2A JSON-RPC payload. Body: `{payload, direction, captured_at?, protocol_version?}` |
+| `POST` | `/trace/ingest` | Ingest one A2A JSON-RPC payload (see body shape above) |
 | `POST` | `/trace/agent_card` | Upsert an agent card (identity + skills) |
 | `GET`  | `/trace/health` | `{status, db_size_mb, message_count_24h}` |
 | `GET`  | `/` | Dashboard overview |
@@ -107,6 +104,15 @@ Six tools: `get_recent_failures`, `get_task_timeline`, `list_active_agents`, `ge
 | `GET`  | `/tasks/<id>` | Task timeline (HTML; add `?format=json` for JSON) |
 | `GET`  | `/agents` | Agent list |
 | `GET`  | `/failures` | Failures grouped by error code |
+| `GET`  | `/spec-warnings` | Passive A2A spec compliance warnings |
+
+## Spec compliance
+
+Skein passively validates every ingested payload against the A2A spec and records any violations as **spec warnings** — distinct from operational failures. A spec warning says "this message itself was malformed"; an operational failure says "the agent's work failed". They're surfaced in their own dashboard page and badged on individual task detail pages.
+
+## Architecture intent
+
+Skein's ingestion layer is architecturally pluggable. v1 ships a single source — the A2A webhook endpoint — but the parser/normalizer split was designed so additional sources (AOP, OWASP AOS, OTLP receiver) can be added without touching the storage or dashboard. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Tests
 
@@ -114,19 +120,21 @@ Six tools: `get_recent_failures`, `get_task_timeline`, `list_active_agents`, `ge
 pytest -q
 ```
 
-49 tests across parser, ingest, timeline, dashboard, failures, SDK, and MCP tools.
-
 ## Roadmap
 
-- **Phase 1 — Capture spine** ✅ ingest webhook, SQLite schema, parser/normalizer, 16 tests
-- **Phase 2 — Timeline + dashboard** ✅ Flask + HTMX dashboard, dark-themed timeline view, +12 tests
-- **Phase 3 — Failure detection + SDK** ✅ stale-task sweep (APScheduler), cascade detection, `/failures` page, Python SDK, `skein demo` + `skein serve` CLI, +12 tests
-- **Phase 4 — MCP server** ✅ 6 tools, separate `skein_mcp` package, stdio transport, +9 tests
+- **Phase 1 — Capture spine** ✅ ingest webhook, SQLite schema, parser/normalizer
+- **Phase 2 — Timeline + dashboard** ✅ Flask + HTMX dashboard, dark-themed timeline view
+- **Phase 3 — Failure detection** ✅ stale-task sweep, cascade detection, `/failures` page, `skein demo` + `skein serve` CLI
+- **Phase 4 — MCP server** ✅ 6 tools for Claude Desktop / Claude Code
 - **Phase 5 — Packaging + release** ✅ PyInstaller spec, NSIS installer, GitHub Actions CI
+- **Phase 6 — OTLP-aware ingestion + spec checks** ✅ W3C trace context capture from A2A metadata, passive spec validator with dedicated `/spec-warnings` page
+- **v1.1 — OTLP export.** Forward captured traces as OTLP to Datadog / Jaeger / Honeycomb. Skein stays a local capture layer that can feed enterprise tooling when users scale up.
+- **v1.2+** Optional Python SDK for decorator-based capture (only if users specifically request it; the recommended path remains the webhook).
+- **Later, demand-driven.** Additional ingestion sources (AOP, OWASP AOS) plugged into the existing parser/normalizer split.
 
 ## Contributing
 
-This is an early portfolio project. PRs welcome — particularly for JS/TS/Go SDK wrappers, additional A2A payload shapes, and OpenTelemetry export (planned for v2).
+Early-stage portfolio project. PRs welcome — particularly for additional A2A payload shapes, OTLP export, and the v1.1 forwarder.
 
 ## License
 

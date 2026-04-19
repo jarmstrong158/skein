@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Spec warnings{% endblock %}
+{% block content %}
+<h1>Spec warnings</h1>
+<p class="dim">Passive A2A spec compliance checks raised at ingest. Distinct from operational failures &mdash; these say the message itself violated the spec, not that an agent's work failed.</p>
+
+<h2>By code</h2>
+{% if by_code %}
+<table class="data">
+  <thead><tr><th>Code</th><th>Severity</th><th>Count</th></tr></thead>
+  <tbody>
+    {% for r in by_code %}
+    <tr>
+      <td><code>{{ r.code }}</code></td>
+      <td><span class="badge badge-{{ r.severity }}">{{ r.severity }}</span></td>
+      <td>{{ r.c }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No spec warnings recorded.</p>
+{% endif %}
+
+<h2>Recent</h2>
+{% if warnings %}
+<table class="data">
+  <thead><tr><th>When</th><th>Severity</th><th>Code</th><th>Description</th><th>Field</th><th>Task</th><th>Agent</th></tr></thead>
+  <tbody>
+    {% for w in warnings %}
+    <tr>
+      <td class="dim">{{ w.raised_at }}</td>
+      <td><span class="badge badge-{{ w.severity }}">{{ w.severity }}</span></td>
+      <td><code>{{ w.code }}</code></td>
+      <td>{{ w.description }}</td>
+      <td>{% if w.field_path %}<code>{{ w.field_path }}</code>{% endif %}</td>
+      <td>{% if w.task_id %}<a href="{{ url_for('dashboard.task_detail', task_id=w.task_id) }}"><code>{{ w.task_id }}</code></a>{% endif %}</td>
+      <td>{% if w.agent_id %}<code>{{ w.agent_id }}</code>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No recent spec warnings.</p>
+{% endif %}
+{% endblock %}

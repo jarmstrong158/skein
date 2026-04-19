@@ -1,4 +1,8 @@
-"""Tests for the Skein client SDK."""
+"""Tests for the internal Skein client helper.
+
+Note: `skein.sdk` is internal in v1 (used by `skein demo`); these tests
+exist to prevent regressions in the helper, not to certify a public API.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-import skein
+from skein.sdk import client as sdk_client
 from skein.sdk import SkeinClient
 
 
@@ -56,8 +60,8 @@ def test_send_agent_card_posts_to_agent_card(recording_server):
 
 
 def test_install_sets_module_level_client_and_send_works(recording_server):
-    skein.install(_endpoint(recording_server))
-    skein.send({"jsonrpc": "2.0", "id": 1, "method": "x", "params": {}}, direction="outbound")
+    sdk_client.install(_endpoint(recording_server))
+    sdk_client.send({"jsonrpc": "2.0", "id": 1, "method": "x", "params": {}}, direction="outbound")
     assert len(recording_server.calls) == 1
 
 

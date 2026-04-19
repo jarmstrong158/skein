@@ -3,6 +3,7 @@
   <div class="stat-card stat-card-warn"><div class="stat-num">{{ counts.failed_24h }}</div><div class="stat-label">Failures (24h)</div></div>
   <div class="stat-card"><div class="stat-num">{{ counts.agents_seen }}</div><div class="stat-label">Agents seen</div></div>
   <div class="stat-card"><div class="stat-num">{{ counts.messages_24h }}</div><div class="stat-label">Messages (24h)</div></div>
+  <div class="stat-card"><div class="stat-num">{{ counts.spec_warnings_24h }}</div><div class="stat-label"><a href="{{ url_for('dashboard.spec_warnings') }}">Spec warnings (24h)</a></div></div>
 </div>
 
 <h2>Recent activity</h2>

@@ -33,9 +33,9 @@ def _cmd_demo(args: argparse.Namespace) -> int:
     No real agents, no a2a-sdk needed — just synthetic JSON-RPC payloads that
     exercise every part of the Skein store: success path, failed path, cascade.
     """
-    from . import sdk
+    from .sdk import client as sdk_client  # internal helper, not public API
 
-    client = sdk.install(endpoint=args.endpoint, raise_on_error=False)
+    client = sdk_client.install(endpoint=args.endpoint, raise_on_error=False)
     console.print(f"[bold]Skein demo[/bold] -> {args.endpoint}")
 
     agents = {

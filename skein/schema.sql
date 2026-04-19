@@ -47,10 +47,36 @@ CREATE TABLE IF NOT EXISTS messages (
     extra_json        TEXT,
     captured_at       TIMESTAMP NOT NULL,
     occurred_at       TIMESTAMP,
+    -- W3C Trace Context / OTLP correlation. Skein extracts these from the
+    -- ingest body's optional `traceparent` field (set by SDKs that captured
+    -- the HTTP header) AND from a2a Message.metadata / Task.metadata.
+    -- Stored verbatim so v1.1 OTLP export can forward them to Datadog/Jaeger.
+    trace_id          TEXT,
+    span_id           TEXT,
+    traceparent       TEXT,
     UNIQUE(task_id, payload_hash)
 );
 CREATE INDEX IF NOT EXISTS idx_messages_task_seq  ON messages(task_id, sequence);
 CREATE INDEX IF NOT EXISTS idx_messages_captured  ON messages(captured_at DESC);
+CREATE INDEX IF NOT EXISTS idx_messages_trace_id  ON messages(trace_id);
+
+-- Spec compliance warnings raised at ingest time. Distinct from operational
+-- failures (tasks.error_*) — these say "the message itself violated the
+-- A2A spec", not "the agent's work failed".
+CREATE TABLE IF NOT EXISTS spec_warnings (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id      TEXT REFERENCES tasks(id),
+    message_id   INTEGER REFERENCES messages(id),
+    agent_id     TEXT REFERENCES agents(id),
+    severity     TEXT NOT NULL,        -- 'warning' | 'error'
+    code         TEXT NOT NULL,        -- e.g. 'a2a/missing-required-field'
+    description  TEXT NOT NULL,
+    field_path   TEXT,                 -- dotted path of the offending field
+    raised_at    TIMESTAMP NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_warnings_task    ON spec_warnings(task_id);
+CREATE INDEX IF NOT EXISTS idx_warnings_message ON spec_warnings(message_id);
+CREATE INDEX IF NOT EXISTS idx_warnings_raised  ON spec_warnings(raised_at DESC);
 
 CREATE TABLE IF NOT EXISTS message_references (
     message_id          INTEGER NOT NULL REFERENCES messages(id),

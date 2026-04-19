@@ -34,6 +34,12 @@ class ParsedMessage:
     to_agent_id: str | None = None
     reference_task_ids: list[str] = field(default_factory=list)
     occurred_at: str | None = None  # ISO8601 if asserted by client
+    # W3C Trace Context — extracted from a2a Message/Task metadata. The
+    # ingest body's top-level `traceparent` (set by SDKs that captured the
+    # HTTP header) is layered in by the route handler before storage.
+    trace_id: str | None = None
+    span_id: str | None = None
+    traceparent: str | None = None
 
 
 @dataclass
@@ -94,6 +100,58 @@ def _extract_task_from_message_params(params: dict[str, Any]) -> ParsedTask | No
         context_id=msg.get("contextId") or params.get("contextId"),
         state="submitted",  # implied: client is sending into this task
     )
+
+
+_TRACEPARENT_RE = None  # populated lazily; format defined in W3C Trace Context
+
+
+def _parse_traceparent(tp: str) -> tuple[str | None, str | None]:
+    """Return (trace_id, span_id) extracted from a W3C traceparent header.
+
+    Format: '<version>-<trace-id-32hex>-<span-id-16hex>-<flags>'
+    Returns (None, None) if malformed; we never raise.
+    """
+    if not isinstance(tp, str):
+        return None, None
+    parts = tp.strip().split("-")
+    if len(parts) != 4:
+        return None, None
+    _, trace_id, span_id, _ = parts
+    if len(trace_id) != 32 or len(span_id) != 16:
+        return None, None
+    return trace_id, span_id
+
+
+def _extract_trace_context(payload: dict[str, Any]) -> tuple[str | None, str | None, str | None]:
+    """Extract (trace_id, span_id, traceparent) from a2a metadata fields.
+
+    Looks in payload.params.message.metadata, payload.result.metadata, and
+    payload.params.metadata. First match wins. Honors both an explicit
+    `traceparent` string and split `trace_id`/`span_id` keys.
+    """
+    candidates: list[dict[str, Any]] = []
+    params = payload.get("params")
+    if isinstance(params, dict):
+        msg = params.get("message")
+        if isinstance(msg, dict) and isinstance(msg.get("metadata"), dict):
+            candidates.append(msg["metadata"])
+        if isinstance(params.get("metadata"), dict):
+            candidates.append(params["metadata"])
+    result = payload.get("result")
+    if isinstance(result, dict) and isinstance(result.get("metadata"), dict):
+        candidates.append(result["metadata"])
+
+    for meta in candidates:
+        tp = meta.get("traceparent")
+        if isinstance(tp, str):
+            tid, sid = _parse_traceparent(tp)
+            if tid:
+                return tid, sid, tp
+        tid = meta.get("trace_id") or meta.get("traceId")
+        sid = meta.get("span_id") or meta.get("spanId")
+        if isinstance(tid, str):
+            return tid, (sid if isinstance(sid, str) else None), None
+    return None, None, None
 
 
 def _extract_reference_task_ids(payload: dict[str, Any]) -> list[str]:
@@ -202,6 +260,7 @@ def parse(payload: dict[str, Any], *, protocol_version: str | None = None) -> Pa
         if isinstance(status, dict):
             occurred_at = status.get("timestamp")
 
+    trace_id, span_id, traceparent = _extract_trace_context(payload)
     parsed_msg = ParsedMessage(
         method=effective_method,
         payload=payload,
@@ -209,6 +268,9 @@ def parse(payload: dict[str, Any], *, protocol_version: str | None = None) -> Pa
         to_agent_id=to_agent,
         reference_task_ids=_extract_reference_task_ids(payload),
         occurred_at=occurred_at,
+        trace_id=trace_id,
+        span_id=span_id,
+        traceparent=traceparent,
     )
 
     return ParsedEvent(

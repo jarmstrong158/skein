@@ -85,6 +85,8 @@ table.data tr:hover td { background: var(--panel-2); }
 .dir-outbound { background: #2a1f3a; color: #c08aff; }
 .badge-state { background: #3a3120; color: var(--warn); }
 .badge-artifact { background: #1f3a2e; color: var(--good); }
+.badge-warning { background: #3a3120; color: var(--warn); }
+.badge-error { background: #3a1f24; color: var(--error); }
 .method { font-family: "JetBrains Mono", Consolas, monospace; font-weight: 600; }
 .agent { color: var(--text); font-size: 0.9rem; }
 .seq { color: var(--dim); font-size: 0.8rem; margin-left: auto; }

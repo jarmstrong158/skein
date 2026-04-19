@@ -23,6 +23,23 @@
   {% endif %}
 </dl>
 
+{% if spec_warnings %}
+<h2>Spec warnings</h2>
+<table class="data">
+  <thead><tr><th>Severity</th><th>Code</th><th>Description</th><th>Field</th></tr></thead>
+  <tbody>
+    {% for w in spec_warnings %}
+    <tr>
+      <td><span class="badge badge-{{ w.severity }}">{{ w.severity }}</span></td>
+      <td><code>{{ w.code }}</code></td>
+      <td>{{ w.description }}</td>
+      <td>{% if w.field_path %}<code>{{ w.field_path }}</code>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
 {% if cascade %}
 <h2>Cascade</h2>
 <p class="dim">Other tasks affected by this failure (via referenceTaskIds or shared contextId within 5 min).</p>
@@ -59,6 +76,9 @@
           {% endif %}
           <span class="seq">#{{ e.data.sequence }}</span>
         </div>
+        {% if e.data.trace_id %}
+        <div class="refs">trace: <code title="{{ e.data.traceparent or '' }}">{{ e.data.trace_id[:16] }}…</code></div>
+        {% endif %}
         {% if e.data.references %}
         <div class="refs">refs:
           {% for ref in e.data.references %}<a href="{{ url_for('dashboard.task_detail', task_id=ref) }}"><code>{{ ref }}</code></a>{% if not loop.last %}, {% endif %}{% endfor %}
