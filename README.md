@@ -51,6 +51,33 @@ skein.send(payload, direction="outbound")  # or "inbound"
 skein.send_agent_card(your_agent_card)
 ```
 
+## Ask Claude about your traces (MCP)
+
+Skein ships an MCP server (separate process, stdio transport) so Claude Desktop or Claude Code can answer "what failed in the last hour", "show me the timeline for task X", "what's the most common error this week", etc.
+
+Install with the MCP extra:
+
+```bash
+pip install -e ".[mcp]"
+```
+
+Add to `~/.config/claude_desktop/claude_desktop_config.json` (Claude Desktop) or your Claude Code MCP config:
+
+```json
+{
+  "mcpServers": {
+    "skein": {
+      "command": "skein-mcp",
+      "env": {
+        "SKEIN_DB_PATH": "C:\\path\\to\\your\\skein\\data\\skein.db"
+      }
+    }
+  }
+}
+```
+
+Six tools exposed: `get_recent_failures`, `get_task_timeline`, `list_active_agents`, `get_agent_activity`, `query_failure_patterns`, `export_trace`.
+
 ## Endpoints (Phase 1)
 
 | Method | Path | Purpose |
@@ -72,7 +99,7 @@ pytest -q
 - **Phase 1 — Capture spine** ✅ ingest webhook, SQLite schema, parser/normalizer, tests
 - **Phase 2 — Timeline + dashboard** ✅ Flask + HTMX dashboard, server-rendered timeline view, dark theme
 - **Phase 3 — Failure detection + SDK** ✅ stale-task sweep (APScheduler), cascade detection via `referenceTaskIds`+`contextId`, `/failures` page, Python SDK with optional `a2a-sdk` monkey-patch, `skein demo` toy agent, `skein serve` CLI
-- **Phase 4 — MCP server** 6 tools for Claude Desktop / Claude Code
+- **Phase 4 — MCP server** ✅ 6 tools for Claude Desktop / Claude Code (separate `skein_mcp` process, stdio transport)
 - **Phase 5 — Packaging + release** PyInstaller bundle, NSIS installer, GitHub Actions CI, v1.0
 
 ## License
