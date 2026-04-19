@@ -17,3 +17,6 @@ htmlcov/
 .ruff_cache/
 config.json
 data/
+build/
+dist/
+*.spec.bak

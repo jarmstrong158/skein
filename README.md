@@ -1,41 +1,59 @@
 # Skein
 
-Local-first observability for [A2A](https://github.com/a2aproject/A2A) multi-agent message flows. Captures JSON-RPC payloads exchanged between A2A agents and renders them as human-readable timelines with failure detection.
+[![CI](https://github.com/jarmstrong158/skein/actions/workflows/ci.yml/badge.svg)](https://github.com/jarmstrong158/skein/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
-> **Status:** v0.1 — Phase 1 (capture spine) complete. Dashboard, MCP server, and SDK shipping in subsequent phases.
+**Local-first observability for [A2A](https://github.com/a2aproject/A2A) multi-agent message flows.** Captures the JSON-RPC traffic between agents and renders it as readable timelines with cascade-aware failure detection — so you stop reconstructing conversations from log dumps by hand.
 
-## What it does
+## Why
 
-Every serious A2A developer today reconstructs conversation flows from JSON-RPC log dumps by hand. Skein captures those flows once and lets you read them as a timeline, query them via Claude through MCP, and pinpoint failures fast.
+Every serious A2A developer today reconstructs conversation flows from JSON-RPC log dumps by hand. Logs look like a dozen people chatting in different Slack channels at once. Skein captures those flows once and lets you read them as a timeline, query them via Claude through MCP, and pinpoint failures fast.
 
-Three primary surfaces (when complete):
-1. **Live dashboard** — Flask web UI showing active tasks, recent failures, agent activity.
-2. **Timeline view** — for any `taskId`, the full ordered conversation between agents with state transitions, errors, and artifacts.
-3. **MCP server** — ask Claude "what failed in the last hour" or "show me the conversation for task X."
+## What's in the box
 
-## Quickstart (Phase 1)
+| | |
+|---|---|
+| **Live dashboard** | Flask web UI: active tasks, recent failures, agent activity, auto-refreshing overview |
+| **Timeline view** | For any `taskId`, the full ordered conversation between agents — messages, state transitions, artifacts, cascade |
+| **Failure detection** | Stale-task sweeper, cascade detection via `referenceTaskIds`+`contextId` (deterministic, per A2A spec) |
+| **MCP server** | Six tools so Claude can answer "what failed in the last hour", "show me task X", "what's the most common error this week" |
+| **Python SDK** | 3-line install; optional monkey-patch of `a2a-sdk` for zero-call-site auto-capture |
+| **Demo workflow** | `skein demo` ships a synthetic 3-agent A2A workflow exercising success, failure, and cascade |
+
+## Install
+
+### Pip (recommended)
 
 ```bash
 git clone https://github.com/jarmstrong158/skein
 cd skein
 python -m venv .venv
-.venv\Scripts\activate         # Windows
-pip install -e ".[dev]"
+.venv\Scripts\activate          # Windows  (use 'source .venv/bin/activate' on Linux/macOS)
+pip install -e ".[dev,mcp]"
 cp config.example.json config.json
+```
 
-# Run the server (with stale-task sweeper running every 60s)
+### Windows installer (no Python required)
+
+Pre-built `Skein-X.Y.Z-Setup.exe` is published with each GitHub release. Bundles Python and Skein into a single installer; see [packaging/windows/README.md](packaging/windows/README.md) for build details.
+
+## Quickstart
+
+```bash
+# Run the server (with the stale-task sweeper running every 60s)
 skein serve
 # -> http://127.0.0.1:5050
 
 # In another terminal, send a synthetic 3-agent A2A workflow
 skein demo
 
-# Open http://127.0.0.1:5050 to inspect
-
-# Or ingest your own A2A payload directly:
-curl -X POST http://127.0.0.1:5050/trace/ingest \
-  -H "Content-Type: application/json" \
-  -d '{"payload": {...A2A JSON-RPC...}, "direction": "outbound"}'
+# Open the dashboard at http://127.0.0.1:5050 to see:
+#   - 3 agents registered
+#   - 1 successful task with artifact
+#   - 1 explicit failure with referenceTaskIds
+#   - 1 cascaded failure
+#   - 1 stuck task that the stale-sweep marks failed within ~60s
 ```
 
 ### Use the SDK from your own A2A app
@@ -51,17 +69,16 @@ skein.send(payload, direction="outbound")  # or "inbound"
 skein.send_agent_card(your_agent_card)
 ```
 
-## Ask Claude about your traces (MCP)
+If you use the official `a2a-sdk`, add `patch_a2a_sdk=True` and skip the per-call instrumentation:
 
-Skein ships an MCP server (separate process, stdio transport) so Claude Desktop or Claude Code can answer "what failed in the last hour", "show me the timeline for task X", "what's the most common error this week", etc.
-
-Install with the MCP extra:
-
-```bash
-pip install -e ".[mcp]"
+```python
+skein.install(endpoint="http://127.0.0.1:5050", patch_a2a_sdk=True)
+# ...your existing a2a-sdk code captures automatically.
 ```
 
-Add to `~/.config/claude_desktop/claude_desktop_config.json` (Claude Desktop) or your Claude Code MCP config:
+## Ask Claude about your traces (MCP)
+
+Add to your Claude Desktop or Claude Code MCP config:
 
 ```json
 {
@@ -76,15 +93,20 @@ Add to `~/.config/claude_desktop/claude_desktop_config.json` (Claude Desktop) or
 }
 ```
 
-Six tools exposed: `get_recent_failures`, `get_task_timeline`, `list_active_agents`, `get_agent_activity`, `query_failure_patterns`, `export_trace`.
+Six tools: `get_recent_failures`, `get_task_timeline`, `list_active_agents`, `get_agent_activity`, `query_failure_patterns`, `export_trace`.
 
-## Endpoints (Phase 1)
+## HTTP API
 
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/trace/ingest` | Accept one A2A JSON-RPC payload. Body: `{payload, direction, captured_at?, protocol_version?}` |
-| `POST` | `/trace/agent_card` | Upsert an agent card (full agent identity + skills) |
-| `GET` | `/trace/health` | Returns `{status, db_size_mb, message_count_24h}` |
+| `POST` | `/trace/ingest` | Ingest one A2A JSON-RPC payload. Body: `{payload, direction, captured_at?, protocol_version?}` |
+| `POST` | `/trace/agent_card` | Upsert an agent card (identity + skills) |
+| `GET`  | `/trace/health` | `{status, db_size_mb, message_count_24h}` |
+| `GET`  | `/` | Dashboard overview |
+| `GET`  | `/tasks` | Filterable task list (`?state=`, `?agent=`) |
+| `GET`  | `/tasks/<id>` | Task timeline (HTML; add `?format=json` for JSON) |
+| `GET`  | `/agents` | Agent list |
+| `GET`  | `/failures` | Failures grouped by error code |
 
 ## Tests
 
@@ -92,16 +114,20 @@ Six tools exposed: `get_recent_failures`, `get_task_timeline`, `list_active_agen
 pytest -q
 ```
 
-16 tests covering parser, ingest endpoints, idempotency, reference-task linkage, agent card upsert, and end-to-end flow against fixture payloads.
+49 tests across parser, ingest, timeline, dashboard, failures, SDK, and MCP tools.
 
 ## Roadmap
 
-- **Phase 1 — Capture spine** ✅ ingest webhook, SQLite schema, parser/normalizer, tests
-- **Phase 2 — Timeline + dashboard** ✅ Flask + HTMX dashboard, server-rendered timeline view, dark theme
-- **Phase 3 — Failure detection + SDK** ✅ stale-task sweep (APScheduler), cascade detection via `referenceTaskIds`+`contextId`, `/failures` page, Python SDK with optional `a2a-sdk` monkey-patch, `skein demo` toy agent, `skein serve` CLI
-- **Phase 4 — MCP server** ✅ 6 tools for Claude Desktop / Claude Code (separate `skein_mcp` process, stdio transport)
-- **Phase 5 — Packaging + release** PyInstaller bundle, NSIS installer, GitHub Actions CI, v1.0
+- **Phase 1 — Capture spine** ✅ ingest webhook, SQLite schema, parser/normalizer, 16 tests
+- **Phase 2 — Timeline + dashboard** ✅ Flask + HTMX dashboard, dark-themed timeline view, +12 tests
+- **Phase 3 — Failure detection + SDK** ✅ stale-task sweep (APScheduler), cascade detection, `/failures` page, Python SDK, `skein demo` + `skein serve` CLI, +12 tests
+- **Phase 4 — MCP server** ✅ 6 tools, separate `skein_mcp` package, stdio transport, +9 tests
+- **Phase 5 — Packaging + release** ✅ PyInstaller spec, NSIS installer, GitHub Actions CI
+
+## Contributing
+
+This is an early portfolio project. PRs welcome — particularly for JS/TS/Go SDK wrappers, additional A2A payload shapes, and OpenTelemetry export (planned for v2).
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
