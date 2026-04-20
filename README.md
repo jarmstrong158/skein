@@ -8,7 +8,7 @@
 
 **When your local multi-agent A2A system breaks, Skein tells you what happened in plain English.** Drop a webhook URL into your agents, run your workflow, and ask Claude what failed. No cloud, no accounts, no setup beyond `pip install`.
 
-![Overview dashboard](docs/screenshots/01_overview.png)
+![Skein dashboard walkthrough](docs/screenshots/00_demo.gif)
 
 ## What Skein is
 
