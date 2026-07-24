@@ -96,3 +96,125 @@ def test_cascade_finds_tasks_referencing_the_failed_one(db):
 
 def test_cascade_returns_empty_for_unknown_task(db):
     assert cascade_for(db, "nope") == []
+
+
+def _insert_task(db, task_id, *, state, context_id, terminal_at=None, at=None):
+    at = at or datetime.now(timezone.utc).isoformat()
+    db.execute(
+        """
+        INSERT INTO tasks (id, context_id, current_state, created_at, updated_at, terminal_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (task_id, context_id, state, at, at, terminal_at),
+    )
+
+
+def _insert_reference(db, *, from_task, to_task, at=None):
+    """Give `from_task` a message that names `to_task` in referenceTaskIds."""
+    at = at or datetime.now(timezone.utc).isoformat()
+    cur = db.execute(
+        """
+        INSERT INTO messages (task_id, sequence, direction, method,
+                              payload_json, payload_hash, captured_at)
+        VALUES (?, 1, 'outbound', 'message/send', '{}', ?, ?)
+        """,
+        (from_task, f"hash-{from_task}", at),
+    )
+    db.execute(
+        "INSERT INTO message_references (message_id, referenced_task_id) VALUES (?, ?)",
+        (cur.lastrowid, to_task),
+    )
+
+
+def test_cascade_context_signal_finds_sibling_failure_in_window(db):
+    """Signal 2: same contextId, failed inside the window, no reference edge."""
+    root_at = datetime.now(timezone.utc)
+    _insert_task(db, "t-root", state="failed", context_id="ctx-1",
+                 terminal_at=root_at.isoformat())
+    sibling_at = (root_at + timedelta(seconds=120)).isoformat()
+    _insert_task(db, "t-sibling", state="failed", context_id="ctx-1",
+                 terminal_at=sibling_at)
+
+    cascade = cascade_for(db, "t-root")
+    assert len(cascade) == 1
+    assert cascade[0]["task_id"] == "t-sibling"
+    assert cascade[0]["via"] == "context"
+
+
+def test_cascade_context_signal_ignores_failure_outside_window(db):
+    root_at = datetime.now(timezone.utc)
+    _insert_task(db, "t-root", state="failed", context_id="ctx-1",
+                 terminal_at=root_at.isoformat())
+    late = (root_at + timedelta(seconds=900)).isoformat()
+    _insert_task(db, "t-late", state="failed", context_id="ctx-1", terminal_at=late)
+
+    assert cascade_for(db, "t-root", window_seconds=300) == []
+
+
+def test_cascade_marks_task_hit_by_both_signals_as_reference_plus_context(db):
+    root_at = datetime.now(timezone.utc)
+    _insert_task(db, "t-root", state="failed", context_id="ctx-1",
+                 terminal_at=root_at.isoformat())
+    both_at = (root_at + timedelta(seconds=60)).isoformat()
+    _insert_task(db, "t-both", state="failed", context_id="ctx-1", terminal_at=both_at)
+    _insert_reference(db, from_task="t-both", to_task="t-root")
+
+    cascade = cascade_for(db, "t-root")
+    assert [c["via"] for c in cascade] == ["reference+context"]
+
+
+# ---------- cascade ordering constraint (signal 1) ----------
+
+def test_cascade_excludes_task_that_finished_before_the_failure(db):
+    """A task that referenced the root an hour *before* it failed is not affected.
+
+    Ordering matters: if the referencing task was already terminal when the
+    root failed, the root's failure cannot have caused anything in it.
+    """
+    root_at = datetime.now(timezone.utc)
+    _insert_task(db, "t-root", state="failed", context_id="ctx-1",
+                 terminal_at=root_at.isoformat())
+    long_before = (root_at - timedelta(hours=1)).isoformat()
+    _insert_task(db, "t-earlier", state="completed", context_id="ctx-1",
+                 terminal_at=long_before, at=long_before)
+    _insert_reference(db, from_task="t-earlier", to_task="t-root", at=long_before)
+
+    assert cascade_for(db, "t-root") == []
+
+
+def test_cascade_includes_referencing_task_still_running_when_root_failed(db):
+    """Still non-terminal at failure time — genuinely may be affected."""
+    root_at = datetime.now(timezone.utc)
+    _insert_task(db, "t-root", state="failed", context_id="ctx-1",
+                 terminal_at=root_at.isoformat())
+    _insert_task(db, "t-live", state="working", context_id="ctx-1", terminal_at=None)
+    _insert_reference(db, from_task="t-live", to_task="t-root")
+
+    cascade = cascade_for(db, "t-root")
+    assert [c["task_id"] for c in cascade] == ["t-live"]
+    assert cascade[0]["via"] == "reference"
+
+
+def test_cascade_includes_referencing_task_that_finished_after_the_failure(db):
+    """Terminal after the root failed, and non-failed — still lineage-relevant."""
+    root_at = datetime.now(timezone.utc)
+    _insert_task(db, "t-root", state="failed", context_id="ctx-1",
+                 terminal_at=root_at.isoformat())
+    after = (root_at + timedelta(seconds=30)).isoformat()
+    _insert_task(db, "t-after", state="completed", context_id="ctx-1", terminal_at=after)
+    _insert_reference(db, from_task="t-after", to_task="t-root")
+
+    cascade = cascade_for(db, "t-root")
+    assert [c["task_id"] for c in cascade] == ["t-after"]
+    assert cascade[0]["via"] == "reference"
+
+
+def test_cascade_without_root_terminal_at_applies_no_ordering_filter(db):
+    """No terminal_at on the root means no instant to order against."""
+    _insert_task(db, "t-root", state="working", context_id="ctx-1", terminal_at=None)
+    long_before = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    _insert_task(db, "t-earlier", state="completed", context_id="ctx-1",
+                 terminal_at=long_before, at=long_before)
+    _insert_reference(db, from_task="t-earlier", to_task="t-root", at=long_before)
+
+    assert [c["task_id"] for c in cascade_for(db, "t-root")] == ["t-earlier"]

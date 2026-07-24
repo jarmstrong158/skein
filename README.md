@@ -17,7 +17,7 @@ A local-first, zero-config debugger for multi-agent [A2A](https://github.com/a2a
 - **Local-first.** SQLite, runs on `localhost`, no auth, no telemetry.
 - **Zero-config ingestion.** One webhook endpoint. Point your agents at it, you're done.
 - **Conversational debugging.** MCP server lets Claude Desktop or Claude Code answer "what failed in the last hour" against your captured traces.
-- **Spec-aware.** Honors A2A `contextId`, `referenceTaskIds`, and W3C `traceparent`. Cascade detection is deterministic, not heuristic.
+- **Spec-aware.** Honors A2A `contextId`, `referenceTaskIds`, and W3C `traceparent`. Cascade detection pairs a deterministic `referenceTaskIds` signal with a heuristic same-context time window, and labels every result with which one fired — see [Cascade detection](#cascade-detection).
 - **Windows-packaged.** Single-file installer ships Python and Skein together; no toolchain required for end users.
 
 ## What Skein is *not*
@@ -171,6 +171,20 @@ Six tools: `get_recent_failures`, `get_task_timeline`, `list_active_agents`, `ge
 ## Spec compliance
 
 Skein passively validates every ingested payload against the A2A spec and records any violations as **spec warnings** — distinct from operational failures. A spec warning says "this message was malformed"; an operational failure says "this agent's work failed". They're surfaced in their own dashboard page and badged on individual task detail pages.
+
+## Cascade detection
+
+When a task fails, Skein looks for other tasks that failure plausibly took down. It uses two signals, and they are **not** equally strong. Every cascade row carries a `via` label saying which one fired, so you can weigh the evidence yourself rather than taking Skein's word for it.
+
+| `via` | Signal | Strength |
+|---|---|---|
+| `reference` | Another task's message named the failed task in A2A `referenceTaskIds`. | **Deterministic** — the lineage edge is asserted by the protocol, not inferred. |
+| `context` | Another task shares the failed task's `contextId` and reached a failure state within 300 seconds after it. | **Heuristic** — the shared `contextId` is spec-derived, but the time window is a correlation guess. |
+| `reference+context` | Both signals fired for the same task. | Strongest available. |
+
+The reference signal is additionally constrained by ordering: a task that had already reached a terminal state *before* the failure cannot have been affected by it, so it is excluded. Tasks still running at that moment are kept regardless of how they end — a task that referenced the failure and still completed is part of the lineage story.
+
+The context signal is a **lead, not a verdict**. Two tasks in one conversation failing within five minutes is often one root cause and sometimes a coincidence; Skein surfaces the correlation and lets you judge. If you only want protocol-asserted edges, read the rows where `via` is `reference` or `reference+context` and ignore the rest. The window is the `window_seconds` argument to `cascade_for()`.
 
 ## Architecture intent
 

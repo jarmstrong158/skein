@@ -1,0 +1,55 @@
+[
+  {
+    "id": "dec-001-4d3c",
+    "summary": "A2A state strings are owned solely by skein/states.py. Call sites derive via call-time accessors (is_failure_state, is_terminal_state, is_valid_state, all_states, failure_states_sql/sql_in) rather than value-importing sets or spelling literals. tests/test_states.py enforces this structurally (AST literal scan) and behaviourally (synthetic state injection).",
+    "problem": "The CHANGELOG advertised skein/states.py as the \"single source of truth for A2A task state strings\" but it was a facade. validator.py re-declared all seven states as an independent frozenset, and the failure triple ('failed','rejected','canceled') was hardcoded at nine call sites across failures/detector.py, dashboard/routes.py and skein_mcp/tools.py. detector.py imported FAILURE_STATES/TERMINAL_STATES behind a `# noqa: F401` while using neither name \u2014 an import placed purely to simulate derivation. Adding a state to states.py would have silently missed every one of those sites.",
+    "why_chosen": "Two properties were needed. First, SQL sites cannot bind a variable-length IN-clause with placeholders cleanly, so they need a rendered fragment: failure_states_sql() builds it from the module-level set at call time, sorted for deterministic SQL text and shape-checked against a regex so a future state string can never become an injection vector. Second, and less obvious: a plain `from ..states import FAILURE_STATES` snapshots the set at module import, so monkeypatching states.py at runtime does not reach it and the drift-guard test cannot detect breakage. Routing every membership check and list render through a call-time accessor makes the whole system observably derived, which is what lets the behavioural test prove derivation instead of merely asserting it. Deriving in _demo_data.py too means the structural scan needs zero carve-outs, and a rule with no exemptions is much harder to erode than one with a precedent for exceptions.",
+    "what_we_tried": "Verified the guard is not vacuous by mutation: re-hardcoding a single detector.py IN-clause back to ('failed','rejected','canceled') fails both the structural scan and the propagation test.",
+    "tradeoffs": "Call-time accessors cost a function call per check (irrelevant at this scale) and are slightly less direct to read than a bare set membership. The structural AST scan is a lint-shaped test living in the test suite, which some would argue belongs in a ruff custom rule; ruff cannot express \"this literal must come from that module\", so the test suite is the only place it can live. Deriving states in _demo_data.py makes the synthetic payloads marginally less literal-readable as sample A2A traffic.",
+    "alternatives": [
+      {
+        "option": "Leave validator.py's independent frozenset and just add a test asserting it equals ALL_STATES",
+        "reason_rejected": "Catches drift in that one set but does nothing for the nine hardcoded SQL/membership sites, which were the actual bug."
+      },
+      {
+        "option": "Value-import FAILURE_STATES everywhere (from ..states import FAILURE_STATES)",
+        "reason_rejected": "Reads as derived but snapshots at module import; runtime state injection cannot reach it, so the guard test would pass vacuously while real drift went undetected."
+      },
+      {
+        "option": "Parameterised IN-clause built from '?' placeholders at each site",
+        "reason_rejected": "Every call site would rebuild the placeholder string and thread the params through, re-introducing per-site logic that can drift. A single rendered fragment keeps the knowledge in one place."
+      },
+      {
+        "option": "Structural AST literal scan only, no behavioural test",
+        "reason_rejected": "Proves nobody spells a literal, but not that the derived plumbing actually carries a new state end-to-end (e.g. it would miss the value-import snapshot problem entirely)."
+      }
+    ],
+    "constraints_created": [
+      "No module outside skein/states.py may spell an A2A task state as a string literal \u2014 import the constant or use a call-time accessor.",
+      "Runtime membership/rendering of states must go through call-time accessors (is_failure_state, is_terminal_state, is_valid_state, all_states, failure_states_sql), never a module-import-time value copy.",
+      "State IN-clauses in SQL must be built with states.failure_states_sql() or states.sql_in(), never hand-written."
+    ],
+    "related_to": [],
+    "tags": [
+      "a2a",
+      "states",
+      "single-source-of-truth",
+      "testing",
+      "drift-guard",
+      "sql"
+    ],
+    "retrieval_hints": [
+      "why does skein import states through helper functions instead of constants",
+      "how does skein stop A2A state strings drifting across call sites",
+      "what does tests/test_states.py guard against",
+      "failure_states_sql sql_in why"
+    ],
+    "origin": "agent",
+    "schema_version": 4,
+    "status": "active",
+    "superseded_by": null,
+    "created_at": "2026-07-24T21:04:06.697277+00:00",
+    "updated_at": "2026-07-24T21:04:06.697277+00:00",
+    "verified_at": "2026-07-24T21:04:06.697277+00:00"
+  }
+]
