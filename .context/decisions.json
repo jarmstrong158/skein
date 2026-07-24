@@ -103,5 +103,57 @@
     "created_at": "2026-07-24T21:05:48.134683+00:00",
     "updated_at": "2026-07-24T21:05:48.134683+00:00",
     "verified_at": "2026-07-24T21:05:48.134683+00:00"
+  },
+  {
+    "id": "dec-003-6b71",
+    "summary": "Resolved parser.py's false docstrings by implementing the promised behaviour rather than deleting the claims: ParsedMessage.extra now captures non-envelope top-level payload fields into the live messages.extra_json column, and ParsedTask.state_timestamp is persisted as state_transitions.at.",
+    "problem": "parser.py's module docstring claimed \"unknown fields are preserved in `extra`\", but no dataclass had an `extra` field and normalizer.py wrote None into messages.extra_json unconditionally \u2014 against a column that is live in schema.sql. Separately, ParsedTask.state_timestamp was parsed and unit-tested but never written anywhere. Both were documentation and schema promising behaviour the code did not have.",
+    "why_chosen": "For extra_json, removing the column was the alternative, but it is live in a shipped schema with a v1->v2 migration model, and SQLite column drops require 3.35+ or a table rebuild \u2014 a destructive migration to delete a feature the docstring already promised users. Implementing was cheaper and strictly additive: JSON-RPC 2.0 defines exactly six envelope members, so \"unknown top-level field\" has a crisp, non-arbitrary definition (anything outside jsonrpc/id/method/params/result/error) rather than requiring a judgement call about what counts as unknown. That makes the docstring true, the column non-dead, and the behaviour testable. For state_timestamp, state_transitions.at is its semantically correct home: the agent's own status.timestamp is a more authoritative statement of when a state changed than either our capture time or the enclosing message's timestamp, so the precedence is state_timestamp > occurred_at > captured_at. This required no schema change at all.",
+    "what_we_tried": "Mutation-verified the state_timestamp precedence test: reverting the normalizer to msg.occurred_at fails the disagreement test, confirming the assertion is discriminating rather than incidentally true (for status-update payloads occurred_at already falls back to status.timestamp, so a naive test would have passed either way).",
+    "tradeoffs": "extra_json duplicates data already present in payload_json, costing a little storage for the convenience of not re-parsing to find extensions. The envelope-only scope means unknown fields nested inside Message/Task objects are still only recoverable from payload_json. Preferring state_timestamp means a client with a skewed clock can write a transition time that disagrees with capture order; accepted because the timeline builder already sorts on best-known timestamp and the alternative discards agent-asserted truth.",
+    "alternatives": [
+      {
+        "option": "Delete the `extra` docstring claim and drop the extra_json column",
+        "reason_rejected": "Destructive migration on a shipped schema to remove a documented capability; SQLite column drop needs 3.35+ or a table rebuild. Implementing was cheaper and additive."
+      },
+      {
+        "option": "Preserve unknown fields at every nesting level, not just the envelope",
+        "reason_rejected": "No crisp definition of 'unknown' inside A2A Message/Task objects, and payload_json already stores the full payload verbatim. Envelope level is the useful, well-defined slice."
+      },
+      {
+        "option": "Drop ParsedTask.state_timestamp as dead",
+        "reason_rejected": "It is the most authoritative timestamp available for a transition; discarding it in favour of our capture time loses real fidelity."
+      },
+      {
+        "option": "Add a state_timestamp column to the tasks table",
+        "reason_rejected": "state_transitions.at already exists for exactly this and needs no migration; a parallel column would create two sources of truth for transition time."
+      }
+    ],
+    "constraints_created": [
+      "Transition time precedence is state_timestamp > message occurred_at > captured_at \u2014 do not reorder without a reason, the agent's own assertion is the most authoritative.",
+      "messages.extra_json holds only non-JSON-RPC-envelope top-level payload fields; the full payload lives in payload_json."
+    ],
+    "related_to": [],
+    "tags": [
+      "parser",
+      "normalizer",
+      "schema",
+      "extra_json",
+      "state_timestamp",
+      "dead-code"
+    ],
+    "retrieval_hints": [
+      "what goes in messages.extra_json",
+      "why was extra_json implemented instead of dropped",
+      "where is ParsedTask.state_timestamp persisted",
+      "transition time precedence skein"
+    ],
+    "origin": "agent",
+    "schema_version": 4,
+    "status": "active",
+    "superseded_by": null,
+    "created_at": "2026-07-24T21:10:28.864184+00:00",
+    "updated_at": "2026-07-24T21:10:28.864184+00:00",
+    "verified_at": "2026-07-24T21:10:28.864184+00:00"
   }
 ]
