@@ -5,7 +5,9 @@ Two flavors:
     state get marked failed with a synthetic 'skein/timeout' error code.
   * Cascade detection — given a failed task, find tasks that referenced it
     (via message_references) or shared its contextId and themselves failed
-    within a temporal window. Spec-derived, not heuristic.
+    within a temporal window. The two signals are not equally strong: the
+    reference signal is deterministic, the context signal is a temporal
+    heuristic. See :func:`cascade_for`.
 """
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from ..states import FAILURE_STATES, TERMINAL_STATES  # noqa: F401
+from ..states import FAILED, failure_states_sql
 
 TIMEOUT_ERROR_CODE = "skein/timeout"
 TIMEOUT_ERROR_MESSAGE = "Task exceeded configured timeout without reaching a terminal state."
@@ -79,21 +81,21 @@ def sweep_stale_tasks(
                 conn.execute(
                     """
                     UPDATE tasks
-                       SET current_state = 'failed',
+                       SET current_state = ?,
                            updated_at    = ?,
                            terminal_at   = ?,
                            error_code    = COALESCE(error_code, ?),
                            error_message = COALESCE(error_message, ?)
                      WHERE id = ? AND terminal_at IS NULL
                     """,
-                    (now_iso, now_iso, TIMEOUT_ERROR_CODE, TIMEOUT_ERROR_MESSAGE, r["id"]),
+                    (FAILED, now_iso, now_iso, TIMEOUT_ERROR_CODE, TIMEOUT_ERROR_MESSAGE, r["id"]),
                 )
                 conn.execute(
                     """
                     INSERT INTO state_transitions (task_id, from_state, to_state, at, triggered_by_message_id)
-                    VALUES (?, ?, 'failed', ?, NULL)
+                    VALUES (?, ?, ?, ?, NULL)
                     """,
-                    (r["id"], prev["current_state"], now_iso),
+                    (r["id"], prev["current_state"], FAILED, now_iso),
                 )
                 conn.execute("COMMIT")
                 marked.append(r["id"])
@@ -109,7 +111,7 @@ def recent_failures(conn: sqlite3.Connection, *, hours: int = 24, limit: int = 1
         SELECT id, context_id, current_state, updated_at, terminal_at,
                error_code, error_message
           FROM tasks
-         WHERE current_state IN ('failed','rejected','canceled')
+         WHERE {failure_states_sql()}
            AND updated_at > datetime('now', '-{int(hours)} hours')
          ORDER BY updated_at DESC
          LIMIT ?
@@ -126,7 +128,7 @@ def failure_patterns(conn: sqlite3.Connection, *, days: int = 7) -> list[dict[st
                COUNT(*) AS count,
                MAX(updated_at) AS latest_at
           FROM tasks
-         WHERE current_state IN ('failed','rejected','canceled')
+         WHERE {failure_states_sql()}
            AND updated_at > datetime('now', '-{int(days)} days')
          GROUP BY COALESCE(error_code, '(unknown)')
          ORDER BY count DESC
@@ -135,10 +137,10 @@ def failure_patterns(conn: sqlite3.Connection, *, days: int = 7) -> list[dict[st
     out: list[dict[str, Any]] = []
     for r in rows:
         examples = conn.execute(
-            """
+            f"""
             SELECT id FROM tasks
              WHERE COALESCE(error_code, '(unknown)') = ?
-               AND current_state IN ('failed','rejected','canceled')
+               AND {failure_states_sql()}
              ORDER BY updated_at DESC
              LIMIT 5
             """,
@@ -156,11 +158,29 @@ def cascade_for(
 ) -> list[dict[str, Any]]:
     """Return tasks plausibly affected by the failure of `task_id`.
 
-    Two signals (deterministic, both per A2A spec):
-      1. Referenced via message_references (a message in another task names
-         this one in referenceTaskIds).
-      2. Same contextId, with a transition into a failed state within
-         `window_seconds` after this task's terminal_at.
+    Two signals of *different* strength. The returned `via` field says which
+    one fired, so callers can weigh them honestly:
+
+      1. ``reference`` — **deterministic**. A message belonging to another task
+         named this task in A2A ``referenceTaskIds``, so the lineage edge is
+         asserted by the protocol, not inferred.
+
+         Constrained by ordering: a referencing task that had already reached a
+         terminal state *before* this task's ``terminal_at`` cannot have been
+         affected by this failure, so it is excluded. Tasks still live at that
+         moment (or terminating after it) are kept regardless of their own
+         final state — a task that referenced the failure and still completed
+         is part of the lineage story. When the root has no ``terminal_at``
+         there is no instant to order against and no ordering filter applies.
+
+      2. ``context`` — **heuristic**. Another task sharing this task's A2A
+         ``contextId`` reached a failure state within `window_seconds` after
+         this task's ``terminal_at``. The shared ``contextId`` is spec-derived,
+         but the temporal window is a correlation guess: co-failure inside the
+         window is suggestive, not proof. Treat it as a lead.
+
+    `via` is ``reference``, ``context``, or ``reference+context`` when both
+    signals fired for the same task.
     """
     root = conn.execute(
         "SELECT id, context_id, terminal_at FROM tasks WHERE id = ?", (task_id,)
@@ -170,16 +190,25 @@ def cascade_for(
 
     related: dict[str, dict[str, Any]] = {}
 
+    # Ordering constraint for signal 1 — see docstring. Only meaningful once the
+    # root has a terminal_at to order against.
+    ref_params: list[Any] = [task_id, task_id]
+    ordering_sql = ""
+    if root["terminal_at"]:
+        ordering_sql = "AND (t.terminal_at IS NULL OR t.terminal_at >= ?)"
+        ref_params.append(root["terminal_at"])
+
     for r in conn.execute(
-        """
+        f"""
         SELECT DISTINCT m.task_id, t.current_state, t.error_code, t.updated_at
           FROM message_references mr
           JOIN messages m ON m.id = mr.message_id
           JOIN tasks t    ON t.id = m.task_id
          WHERE mr.referenced_task_id = ?
            AND t.id != ?
+           {ordering_sql}
         """,
-        (task_id, task_id),
+        ref_params,
     ).fetchall():
         related[r["task_id"]] = {
             "task_id": r["task_id"],
@@ -194,12 +223,12 @@ def cascade_for(
         if root_terminal is not None:
             window_end = (root_terminal + timedelta(seconds=window_seconds)).isoformat()
             for r in conn.execute(
-                """
+                f"""
                 SELECT id, current_state, error_code, updated_at, terminal_at
                   FROM tasks
                  WHERE context_id = ?
                    AND id != ?
-                   AND current_state IN ('failed','rejected','canceled')
+                   AND {failure_states_sql()}
                    AND terminal_at >= ?
                    AND terminal_at <= ?
                 """,

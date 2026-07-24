@@ -13,10 +13,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-VALID_TASK_STATES = frozenset({
-    "submitted", "working", "input-required",
-    "completed", "failed", "canceled", "rejected",
-})
+from .states import ALL_STATES, is_valid_state
+
+# Derived, never re-spelled: adding a state to skein/states.py teaches the
+# validator about it automatically. Membership is checked through
+# is_valid_state() so the lookup resolves at call time rather than snapshotting
+# this frozenset at import. See tests/test_states.py.
+VALID_TASK_STATES: frozenset[str] = frozenset(ALL_STATES)
 
 VALID_AGENT_CARD_REQUIRED = ("name", "url", "version")
 
@@ -59,7 +62,7 @@ def validate_payload(payload: dict[str, Any]) -> list[SpecWarning]:
         status = result.get("status")
         if isinstance(status, dict):
             state = status.get("state")
-            if state is not None and state not in VALID_TASK_STATES:
+            if state is not None and not is_valid_state(state):
                 warnings.append(SpecWarning(
                     severity="warning",
                     code="a2a/invalid-task-state",

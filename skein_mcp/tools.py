@@ -16,6 +16,7 @@ from skein.failures.detector import (
     failure_patterns,
     recent_failures,
 )
+from skein.states import is_failure_state
 from skein.timeline.builder import build, to_dict
 
 
@@ -79,7 +80,7 @@ def get_agent_activity(
     ).fetchall()
     state_counts = {r["current_state"]: r["c"] for r in task_stats}
     total = sum(state_counts.values())
-    failed = sum(state_counts.get(s, 0) for s in ("failed", "rejected", "canceled"))
+    failed = sum(c for s, c in state_counts.items() if is_failure_state(s))
     return {
         "agent_id": agent_id,
         "hours": hours,

@@ -11,8 +11,9 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any
 
+from ..states import SUBMITTED, is_terminal_state
 from ..validator import validate_agent_card, validate_payload
-from .parser import TERMINAL_STATES, ParsedEvent, payload_hash
+from .parser import ParsedEvent, payload_hash
 
 
 def _now_iso() -> str:
@@ -35,10 +36,10 @@ def _upsert_task(conn: sqlite3.Connection, event: ParsedEvent, captured_at: str)
             (
                 task.id,
                 task.context_id,
-                task.state or "submitted",
+                task.state or SUBMITTED,
                 captured_at,
                 captured_at,
-                captured_at if (task.state or "") in TERMINAL_STATES else None,
+                captured_at if is_terminal_state(task.state) else None,
                 task.error_code,
                 task.error_message,
             ),
@@ -46,7 +47,7 @@ def _upsert_task(conn: sqlite3.Connection, event: ParsedEvent, captured_at: str)
     else:
         new_state = task.state or row["current_state"]
         terminal_at = row["terminal_at"]
-        if terminal_at is None and new_state in TERMINAL_STATES:
+        if terminal_at is None and is_terminal_state(new_state):
             terminal_at = captured_at
         conn.execute(
             """
@@ -191,7 +192,7 @@ def store(
                 json.dumps(msg.payload, sort_keys=True),
                 h,
                 event.protocol_version,
-                None,
+                json.dumps(msg.extra, sort_keys=True) if msg.extra else None,
                 captured_at,
                 msg.occurred_at,
                 msg.trace_id,
@@ -216,9 +217,13 @@ def store(
                 (task.id, message_id, w.severity, w.code, w.description, w.field_path, captured_at),
             )
 
+        # Prefer the agent's own assertion of *when the state changed*
+        # (A2A `status.timestamp`) over the message time, and that over our
+        # capture time. This is where ParsedTask.state_timestamp lands.
         new_state = task.state
+        transition_at = task.state_timestamp or msg.occurred_at or captured_at
         _record_state_transition(
-            conn, task.id, prior_state, new_state, msg.occurred_at or captured_at, message_id
+            conn, task.id, prior_state, new_state, transition_at, message_id
         )
 
         for art in event.artifacts:

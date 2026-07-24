@@ -1,8 +1,12 @@
 """Parse A2A JSON-RPC payloads into a normalized intermediate representation.
 
-The parser is permissive: unknown fields are preserved in `extra`, unknown
-methods produce a ParsedEvent with method set but minimal extracted detail.
+The parser is permissive: unknown methods produce a ParsedEvent with method
+set but minimal extracted detail, and any JSON-RPC envelope field outside the
+spec's six (`jsonrpc`, `id`, `method`, `params`, `result`, `error`) is
+preserved on `ParsedMessage.extra` and persisted to `messages.extra_json`.
 This keeps ingest robust as the A2A spec evolves.
+
+State strings are never spelled here — they come from :mod:`skein.states`.
 """
 
 from __future__ import annotations
@@ -12,9 +16,11 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..states import TERMINAL_STATES  # re-export for back-compat
+from ..states import FAILED, SUBMITTED
 
-__all_terminal = TERMINAL_STATES  # noqa: F841 (kept so existing imports keep working)
+# JSON-RPC 2.0 envelope members. Anything else at the top level of a payload
+# is a vendor/spec extension and is captured into ParsedMessage.extra.
+_JSONRPC_ENVELOPE_KEYS = frozenset({"jsonrpc", "id", "method", "params", "result", "error"})
 
 
 @dataclass
@@ -22,7 +28,10 @@ class ParsedTask:
     id: str
     context_id: str | None = None
     state: str | None = None
-    state_timestamp: str | None = None  # ISO8601 from payload, or None
+    # ISO8601 timestamp the *agent* asserted for this state change (A2A
+    # `status.timestamp`), or None. Persisted as `state_transitions.at` —
+    # it is more authoritative than our capture time. See normalizer.store().
+    state_timestamp: str | None = None
     error_code: str | None = None
     error_message: str | None = None
 
@@ -41,6 +50,9 @@ class ParsedMessage:
     trace_id: str | None = None
     span_id: str | None = None
     traceparent: str | None = None
+    # Non-spec top-level envelope fields, preserved verbatim so an evolving
+    # A2A spec doesn't silently drop data. Empty dict when there are none.
+    extra: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -99,11 +111,8 @@ def _extract_task_from_message_params(params: dict[str, Any]) -> ParsedTask | No
     return ParsedTask(
         id=task_id,
         context_id=msg.get("contextId") or params.get("contextId"),
-        state="submitted",  # implied: client is sending into this task
+        state=SUBMITTED,  # implied: client is sending into this task
     )
-
-
-_TRACEPARENT_RE = None  # populated lazily; format defined in W3C Trace Context
 
 
 def _parse_traceparent(tp: str) -> tuple[str | None, str | None]:
@@ -153,6 +162,15 @@ def _extract_trace_context(payload: dict[str, Any]) -> tuple[str | None, str | N
         if isinstance(tid, str):
             return tid, (sid if isinstance(sid, str) else None), None
     return None, None, None
+
+
+def _extract_envelope_extra(payload: dict[str, Any]) -> dict[str, Any]:
+    """Preserve any top-level payload field the JSON-RPC envelope doesn't define.
+
+    A2A rides on JSON-RPC 2.0, so anything outside `_JSONRPC_ENVELOPE_KEYS` is
+    an extension. We keep it rather than dropping it silently.
+    """
+    return {k: v for k, v in payload.items() if k not in _JSONRPC_ENVELOPE_KEYS}
 
 
 def _extract_reference_task_ids(payload: dict[str, Any]) -> list[str]:
@@ -246,7 +264,7 @@ def parse(payload: dict[str, Any], *, protocol_version: str | None = None) -> Pa
         task.error_code = str(error.get("code", ""))
         task.error_message = str(error.get("message", ""))
         if task.state is None:
-            task.state = "failed"
+            task.state = FAILED
 
     # Sender/recipient agent ids — A2A doesn't always carry these; capture if present.
     from_agent = None
@@ -275,6 +293,7 @@ def parse(payload: dict[str, Any], *, protocol_version: str | None = None) -> Pa
         trace_id=trace_id,
         span_id=span_id,
         traceparent=traceparent,
+        extra=_extract_envelope_extra(payload),
     )
 
     return ParsedEvent(

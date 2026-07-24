@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from .states import COMPLETED, FAILED, INPUT_REQUIRED, WORKING
+
 
 @dataclass
 class Scenarios:
@@ -170,8 +172,8 @@ def _build_research_context(s: Scenarios) -> None:
         text="Pull the last 90 days of A2A protocol release notes.",
         traceparent=TP_RESEARCH,
     ), "outbound")
-    _send(s, _status(t1, ctx, "working"), "inbound")
-    _send(s, _terminal(t1, ctx, "completed", rpc_id="1", artifacts=[{
+    _send(s, _status(t1, ctx, WORKING), "inbound")
+    _send(s, _terminal(t1, ctx, COMPLETED, rpc_id="1", artifacts=[{
         "name": "release_notes_summary", "mimeType": "text/markdown",
         "parts": [{"kind": "text", "text":
             "# A2A release notes (last 90 days)\n\n"
@@ -190,8 +192,8 @@ def _build_research_context(s: Scenarios) -> None:
         text="Draft a 2-paragraph summary using the release notes.",
         refs=[t1], traceparent=TP_RESEARCH,
     ), "outbound")
-    _send(s, _status(t2, ctx, "working"), "inbound")
-    _send(s, _terminal(t2, ctx, "completed", rpc_id="2", artifacts=[{
+    _send(s, _status(t2, ctx, WORKING), "inbound")
+    _send(s, _terminal(t2, ctx, COMPLETED, rpc_id="2", artifacts=[{
         "name": "summary_v1", "mimeType": "text/plain",
         "parts": [{"kind": "text", "text":
             "Over the last quarter, A2A has tightened its core "
@@ -211,8 +213,8 @@ def _build_research_context(s: Scenarios) -> None:
         text="Critique the draft for tone and factual accuracy.",
         refs=[t2], traceparent=TP_RESEARCH,
     ), "outbound")
-    _send(s, _status(t3, ctx, "working"), "inbound")
-    _send(s, _terminal(t3, ctx, "failed", rpc_id="3",
+    _send(s, _status(t3, ctx, WORKING), "inbound")
+    _send(s, _terminal(t3, ctx, FAILED, rpc_id="3",
                        error=(-32011, "Reviewer auth token expired (401 Unauthorized)")), "inbound")
     s.summary_lines.append(f"[red]X[/red] {t3}: reviewer auth expired")
 
@@ -224,7 +226,7 @@ def _build_research_context(s: Scenarios) -> None:
         text="Page the on-call about the failed review.",
         refs=[t3], traceparent=TP_RESEARCH,
     ), "outbound")
-    _send(s, _terminal(t4, ctx, "completed", rpc_id="4", artifacts=[{
+    _send(s, _terminal(t4, ctx, COMPLETED, rpc_id="4", artifacts=[{
         "name": "page_receipt", "mimeType": "application/json",
         "parts": [{"kind": "text", "text":
             '{"channel":"#oncall-research","status":"delivered"}'}],
@@ -244,8 +246,8 @@ def _build_ops_context(s: Scenarios) -> None:
         text="Run pre-deploy validation suite for service `payments-api`.",
         traceparent=TP_OPS,
     ), "outbound")
-    _send(s, _status(t1, ctx, "working"), "inbound")
-    _send(s, _terminal(t1, ctx, "completed", rpc_id="1", artifacts=[{
+    _send(s, _status(t1, ctx, WORKING), "inbound")
+    _send(s, _terminal(t1, ctx, COMPLETED, rpc_id="1", artifacts=[{
         "name": "validation_report", "mimeType": "text/plain",
         "parts": [{"kind": "text", "text":
             "PASS: schema migrations\n"
@@ -279,16 +281,16 @@ def _build_indexing_context(s: Scenarios) -> None:
         text="Index https://docs.example.org/* (full crawl).",
         traceparent=TP_INDEX,
     ), "outbound")
-    _send(s, _status(t1, ctx, "working"), "inbound")
-    _send(s, _status(t1, ctx, "input-required"), "inbound")
+    _send(s, _status(t1, ctx, WORKING), "inbound")
+    _send(s, _status(t1, ctx, INPUT_REQUIRED), "inbound")
     _send(s, _msg_send(
         msg_id="m-i2", task_id=t1, ctx=ctx, rpc_id="2",
         from_url=A["orchestrator"]["url"], to_url=A["indexer"]["url"],
         text="Yes, include the /api subpath.",
         traceparent=TP_INDEX,
     ), "outbound")
-    _send(s, _status(t1, ctx, "working"), "inbound")
-    _send(s, _terminal(t1, ctx, "completed", rpc_id="3", artifacts=[{
+    _send(s, _status(t1, ctx, WORKING), "inbound")
+    _send(s, _terminal(t1, ctx, COMPLETED, rpc_id="3", artifacts=[{
         "name": "index_stats", "mimeType": "application/json",
         "parts": [{"kind": "text", "text":
             '{"pages":2148,"tokens":4720333,"duration_seconds":94}'}],

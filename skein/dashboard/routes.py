@@ -8,6 +8,7 @@ from flask import Blueprint, abort, jsonify, render_template, request
 
 from ..db import get_db
 from ..failures.detector import cascade_for, failure_patterns, recent_failures
+from ..states import all_states, failure_states_sql, is_failure_state
 from ..timeline.builder import build, to_dict
 
 bp = Blueprint(
@@ -39,9 +40,9 @@ def overview():
             "SELECT COUNT(*) AS c FROM tasks WHERE terminal_at IS NULL"
         ).fetchone()["c"],
         "failed_24h": conn.execute(
-            """
+            f"""
             SELECT COUNT(*) AS c FROM tasks
-             WHERE current_state IN ('failed','rejected','canceled')
+             WHERE {failure_states_sql()}
                AND updated_at > datetime('now', '-1 day')
             """
         ).fetchone()["c"],
@@ -76,10 +77,10 @@ def contexts():
     """
     conn = get_db()
     rows = conn.execute(
-        """
+        f"""
         SELECT context_id,
                COUNT(*)                                          AS task_count,
-               SUM(CASE WHEN current_state IN ('failed','rejected','canceled') THEN 1 ELSE 0 END)
+               SUM(CASE WHEN {failure_states_sql()} THEN 1 ELSE 0 END)
                                                                  AS failed_count,
                SUM(CASE WHEN terminal_at IS NULL THEN 1 ELSE 0 END)
                                                                  AS active_count,
@@ -164,7 +165,6 @@ def agents():
 
 @bp.get("/tasks")
 def tasks():
-    from ..states import ALL_STATES
     conn = get_db()
     state = request.args.get("state")
     agent = request.args.get("agent")
@@ -210,7 +210,7 @@ def tasks():
     return render_template(
         "tasks.html",
         tasks=rows,
-        states=list(ALL_STATES),
+        states=list(all_states()),
         current_state=state,
         current_agent=agent,
         current_q=q,
@@ -243,7 +243,7 @@ def task_detail(task_id: str):
             agents_map[r["id"]] = r["name"] or r["id"]
 
     cascade = []
-    if timeline.task and timeline.task.get("current_state") in ("failed", "rejected", "canceled"):
+    if timeline.task and is_failure_state(timeline.task.get("current_state")):
         cascade = cascade_for(conn, task_id)
 
     spec_warnings = conn.execute(
