@@ -51,5 +51,57 @@
     "created_at": "2026-07-24T21:04:06.697277+00:00",
     "updated_at": "2026-07-24T21:04:06.697277+00:00",
     "verified_at": "2026-07-24T21:04:06.697277+00:00"
+  },
+  {
+    "id": "dec-002-cac0",
+    "summary": "Cascade detection keeps both signals but stops claiming both are deterministic. Signal 1 (referenceTaskIds) is deterministic and gains an ordering constraint; signal 2 (same-contextId within 300s) is documented as a heuristic lead. The existing `via` label is the honest interface and the README now leads with it.",
+    "problem": "README:20 advertised \"Cascade detection is deterministic, not heuristic\", and detector.py's docstring said \"Two signals (deterministic, both per A2A spec)\". Signal 2 is same-contextId failures inside a 300-second magic window \u2014 a temporal correlation guess, as its own docstring conceded by describing results as \"plausibly affected\". Separately, signal 1 had no time filter and no state filter, so a task that referenced X an hour before X failed was reported as cascade-affected by it.",
+    "why_chosen": "Deleting the context signal would lose real diagnostic value \u2014 co-failure inside one A2A conversation usually does share a root cause, and it is often the only signal available when agents do not populate referenceTaskIds. Silently keeping it while calling it deterministic was the actual defect, and the fix was documentation, not removal, because the code already exposed the distinction through the per-row `via: reference|context|reference+context` label. For the ordering bug, the principled constraint is causal: a task that had already reached a terminal state before the root's terminal_at cannot have been affected by that failure, so exclude it. Deliberately did NOT add a failure-state filter to signal 1: a task that referenced the failure and still completed is part of the lineage story, and the shipped demo/screenshot depends on exactly that case (task-research-notify completes while appearing in the cascade). When the root has no terminal_at there is no instant to order against, so no filter applies.",
+    "what_we_tried": "",
+    "tradeoffs": "The README is longer and less punchy than \"deterministic, not heuristic\" \u2014 a marketing line traded for an accurate one. The ordering constraint relies on terminal_at being populated correctly at ingest; tasks with a missing or clock-skewed terminal_at will not be filtered (they fall through to the no-filter path, which is the safe direction: over-report rather than hide). The 300s window remains a magic default, now at least documented as arbitrary.",
+    "alternatives": [
+      {
+        "option": "Drop the same-contextId signal entirely so the deterministic claim becomes true",
+        "reason_rejected": "Throws away the only cascade signal available when agents do not populate referenceTaskIds; the problem was the claim, not the signal."
+      },
+      {
+        "option": "Add a failure-state filter to signal 1 to match signal 2",
+        "reason_rejected": "A task that referenced the failed task and still completed is genuine lineage; filtering it would gut the demo's headline cascade view."
+      },
+      {
+        "option": "Filter signal 1 by referencing-message time >= root terminal_at",
+        "reason_rejected": "Breaks the common and legitimate case where B references A up front, A fails later, and B is then affected. Task terminality, not message time, is the correct causal boundary."
+      },
+      {
+        "option": "Make the 300s window configurable in config.json",
+        "reason_rejected": "Already a cascade_for() keyword argument; promoting it to user config adds a knob without a demonstrated need."
+      }
+    ],
+    "constraints_created": [
+      "Do not describe cascade detection as purely deterministic \u2014 the context signal is a documented heuristic and must be labelled as such wherever it is advertised.",
+      "Cascade signal 1 must not filter by the referencing task's final state; only by the causal ordering constraint (already-terminal-before-root-failed is excluded)."
+    ],
+    "related_to": [],
+    "tags": [
+      "a2a",
+      "cascade",
+      "detector",
+      "readme",
+      "honesty",
+      "heuristics"
+    ],
+    "retrieval_hints": [
+      "is skein cascade detection deterministic or heuristic",
+      "why does cascade_for exclude tasks that finished before the failure",
+      "what does the via reference context label mean",
+      "300 second cascade window rationale"
+    ],
+    "origin": "agent",
+    "schema_version": 4,
+    "status": "active",
+    "superseded_by": null,
+    "created_at": "2026-07-24T21:05:48.134683+00:00",
+    "updated_at": "2026-07-24T21:05:48.134683+00:00",
+    "verified_at": "2026-07-24T21:05:48.134683+00:00"
   }
 ]
