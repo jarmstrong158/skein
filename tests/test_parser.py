@@ -60,6 +60,35 @@ def test_parse_rejects_non_jsonrpc_payload():
         parse({"not": "jsonrpc"})
 
 
+def test_parse_preserves_unknown_envelope_fields_in_extra():
+    """The docstring promises unknown fields survive — hold it to that."""
+    payload = {
+        "jsonrpc": "2.0",
+        "id": "1",
+        "method": "message/send",
+        "params": {"message": {"taskId": "t1", "messageId": "m1", "role": "user",
+                               "parts": [{"kind": "text", "text": "hi"}]}},
+        "x-vendor-hint": {"tier": "gold"},
+        "futureSpecField": 7,
+    }
+    event = parse(payload)
+    assert event.message.extra == {"x-vendor-hint": {"tier": "gold"}, "futureSpecField": 7}
+
+
+def test_parse_extra_is_empty_for_a_plain_envelope():
+    """Spec-shaped payloads must not smuggle envelope members into extra."""
+    event = parse(load_fixture("01_message_send_request.json"))
+    assert event.message.extra == {}
+
+
+def test_parse_extra_never_captures_jsonrpc_envelope_members():
+    payload = {
+        "jsonrpc": "2.0", "id": "1", "method": "tasks/get",
+        "params": {"id": "t1"}, "result": None, "error": None,
+    }
+    assert parse(payload).message.extra == {}
+
+
 def test_payload_hash_is_stable_under_key_reordering():
     a = {"jsonrpc": "2.0", "id": 1, "method": "x", "params": {"a": 1, "b": 2}}
     b = {"params": {"b": 2, "a": 1}, "method": "x", "id": 1, "jsonrpc": "2.0"}

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from tests.conftest import load_fixture
 
 
@@ -112,6 +114,80 @@ def test_agent_card_upsert(client, db):
     ).fetchone()
     assert row["name"] == "Analyst Agent"
     assert "summarize_sales" in row["card_json"]
+
+
+def test_ingest_persists_unknown_envelope_fields_to_extra_json(client, db):
+    """messages.extra_json is a live column, not decoration."""
+    payload = load_fixture("01_message_send_request.json")
+    payload["x-vendor-hint"] = {"tier": "gold"}
+    _post_ingest(client, payload)
+
+    row = db.execute(
+        "SELECT extra_json FROM messages WHERE task_id = 'task-abc'"
+    ).fetchone()
+    assert json.loads(row["extra_json"]) == {"x-vendor-hint": {"tier": "gold"}}
+
+
+def test_ingest_leaves_extra_json_null_when_there_is_nothing_extra(client, db):
+    _post_ingest(client, load_fixture("01_message_send_request.json"))
+    row = db.execute(
+        "SELECT extra_json FROM messages WHERE task_id = 'task-abc'"
+    ).fetchone()
+    assert row["extra_json"] is None
+
+
+def test_state_transition_uses_the_agents_asserted_state_timestamp(client, db):
+    """ParsedTask.state_timestamp is persisted as the transition time.
+
+    The agent's own `status.timestamp` is more authoritative about when the
+    state changed than the message time or our capture time, so it wins.
+    """
+    _post_ingest(client, load_fixture("01_message_send_request.json"), direction="outbound")
+    payload = {
+        "jsonrpc": "2.0",
+        "id": "2",
+        "result": {
+            "kind": "status-update",
+            "taskId": "task-abc",
+            "contextId": "ctx-001",
+            "status": {"state": "working", "timestamp": "2026-04-19T10:00:01Z"},
+        },
+    }
+    _post_ingest(client, payload)
+
+    row = db.execute(
+        "SELECT at FROM state_transitions WHERE task_id = 'task-abc' AND to_state = 'working'"
+    ).fetchone()
+    assert row["at"] == "2026-04-19T10:00:01Z"
+
+
+def test_state_timestamp_beats_message_timestamp_when_they_disagree(client, db):
+    """Message time is only the fallback — the status timestamp is the truth."""
+    payload = {
+        "jsonrpc": "2.0",
+        "id": "1",
+        "method": "message/send",
+        "params": {
+            "message": {
+                "messageId": "m9", "role": "agent",
+                "parts": [{"kind": "text", "text": "done"}],
+                "taskId": "task-zzz", "contextId": "ctx-zzz",
+                "timestamp": "2026-04-19T09:00:00Z",
+            }
+        },
+        "result": {
+            "id": "task-zzz",
+            "contextId": "ctx-zzz",
+            "status": {"state": "completed", "timestamp": "2026-04-19T11:30:00Z"},
+        },
+    }
+    _post_ingest(client, payload)
+
+    row = db.execute(
+        "SELECT at, to_state FROM state_transitions WHERE task_id = 'task-zzz'"
+    ).fetchone()
+    assert row["to_state"] == "completed"
+    assert row["at"] == "2026-04-19T11:30:00Z"
 
 
 def test_agent_stub_created_for_unknown_agent_seen_in_message(client, db):

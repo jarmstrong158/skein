@@ -193,7 +193,7 @@ Skein's ingestion layer is architecturally pluggable. v1 ships a single source â
 ## Tests
 
 ```bash
-pytest -q       # 71 tests
+pytest -q       # 130 tests
 ruff check .    # lint
 mypy skein skein_mcp   # type-check
 ```
