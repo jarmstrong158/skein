@@ -69,14 +69,17 @@ mcp_a = Analysis(
     binaries=[],
     datas=skein_datas,
     # Avoid collect_submodules("mcp") because mcp.cli imports the optional
-    # `typer` package and fails at analysis time. Pull in just what FastMCP
-    # needs.
+    # `typer` package and fails at analysis time. Pull in just what MCPServer
+    # needs. `mcp_types` is its own distribution as of SDK v2 and is not
+    # reached by walking `mcp`, so it has to be named explicitly.
     hiddenimports=hidden + [
         "mcp",
         "mcp.server",
-        "mcp.server.fastmcp",
+        "mcp.server.mcpserver",
+        "mcp.server.caching",
         "mcp.server.stdio",
         "mcp.types",
+        "mcp_types",
     ],
     hookspath=[],
     runtime_hooks=[],

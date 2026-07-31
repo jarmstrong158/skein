@@ -16,6 +16,16 @@ All notable changes to Skein are documented here. Format roughly follows [Keep a
 - `CHANGELOG.md`.
 
 ### Changed
+- **MCP server migrated to protocol revision `2026-07-28`** on SDK `mcp>=2.0,<3` (was `mcp>=1.0`).
+  `FastMCP` became `MCPServer`; the SDK removed `mcp.server.fastmcp` outright, with no
+  compatibility alias, so the old pin would have broken on any fresh install once `mcp` 2.0
+  shipped. `tools/list` and `server/discover` now carry `ttlMs`/`cacheScope` cache hints, and tool
+  ordering is asserted rather than incidental. Six new conformance tests cover the negotiated
+  version, cache hints, ordering, `resultType`, per-result `serverInfo`, and `server/discover`.
+  No behavioural change to the six tools themselves; Skein used no sessions, roots, sampling, or
+  protocol-level logging, so nothing was deprecated out from under it.
+- Windows PyInstaller spec: hidden imports follow the SDK rename, and name `mcp_types`
+  explicitly — it is a separate distribution in SDK v2 and is not reached by walking `mcp`.
 - README rewritten around the specific debugging-moment value prop, with screenshots and an explicit "what Skein isn't" table calling out A2A Inspector, AOP, Agent Gateway, OpenTelemetry+Datadog, OWASP AOS.
 - NSIS installer takes `APP_VERSION` via `/D` so the bundle version comes from `pyproject.toml`.
 - CI now runs `ruff check` and `mypy` in addition to pytest.

@@ -144,6 +144,12 @@ Add to your Claude Desktop or Claude Code MCP config:
 
 Six tools: `get_recent_failures`, `get_task_timeline`, `list_active_agents`, `get_agent_activity`, `query_failure_patterns`, `export_trace`.
 
+Skein speaks **MCP protocol revision `2026-07-28`** over stdio, on SDK `mcp>=2.0,<3`. It is
+stateless: there is no `initialize` handshake and no session id, every request carries its own
+protocol version and client identity, and each tool call opens and closes its own database
+connection. `tools/list` and `server/discover` return `ttlMs`/`cacheScope` freshness hints, and
+the tool order is stable across calls so client-side and prompt caches keep hitting.
+
 ## CLI
 
 | Command | Purpose |
