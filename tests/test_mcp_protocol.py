@@ -55,11 +55,11 @@ async def test_mcp_call_tool_returns_json_string(monkeypatch, tmp_path):
 
     # Call through MCP machinery
     result = await srv.mcp.call_tool("get_task_timeline", {"task_id": "mcp-task-001"})
-    # FastMCP returns a CallToolResult or list of content blocks; normalize to text.
+    # MCPServer returns a CallToolResult or list of content blocks; normalize to text.
     if hasattr(result, "content"):
         text = result.content[0].text  # type: ignore[union-attr]
     elif isinstance(result, tuple):
-        # Newer FastMCP versions return (content, structured) tuples.
+        # Some SDK versions return (content, structured) tuples.
         content = result[0]
         text = content[0].text if content else "null"
     else:
@@ -68,3 +68,108 @@ async def test_mcp_call_tool_returns_json_string(monkeypatch, tmp_path):
     blob = json.loads(text)
     assert blob is not None
     assert blob["task_id"] == "mcp-task-001"
+
+
+# --------------------------------------------------------------------------
+# Conformance with MCP protocol revision 2026-07-28.
+#
+# These drive a real in-process client against the server so they exercise the
+# actual dispatch path (where cache hints and result metadata are applied),
+# not the convenience accessors on MCPServer, which bypass it.
+# --------------------------------------------------------------------------
+
+PROTOCOL_VERSION = "2026-07-28"
+
+# Registration order in skein_mcp.server. Asserted explicitly rather than as
+# "stable across two calls", so a reordering of the decorators is a test
+# failure and a deliberate choice rather than a silent cache-hit regression
+# for every client.
+EXPECTED_TOOL_ORDER = [
+    "get_recent_failures",
+    "get_task_timeline",
+    "list_active_agents",
+    "get_agent_activity",
+    "query_failure_patterns",
+    "export_trace",
+]
+
+
+@pytest.fixture
+def client():
+    from mcp.client.client import Client
+
+    from skein_mcp.server import mcp as server
+    return Client(server)
+
+
+@pytest.mark.asyncio
+async def test_negotiates_2026_07_28(client):
+    """The server speaks the new revision without an initialize handshake."""
+    async with client as c:
+        assert c.protocol_version == PROTOCOL_VERSION
+
+
+@pytest.mark.asyncio
+async def test_tools_list_carries_cache_hints(client):
+    """SEP-2549: tools/list results must carry ttlMs and cacheScope.
+
+    Checked on the serialized wire form, because the snake_case attributes
+    would pass even if the camelCase aliases regressed.
+    """
+    async with client as c:
+        result = await c.list_tools()
+        wire = result.model_dump(by_alias=True, exclude_none=True)
+
+    assert wire["ttlMs"] == 300_000
+    assert wire["cacheScope"] == "public"
+
+
+@pytest.mark.asyncio
+async def test_tools_list_order_is_deterministic(client):
+    """Servers SHOULD return tools in a deterministic order so clients can
+    cache and LLM prompt caches keep hitting."""
+    async with client as c:
+        first = [t.name for t in (await c.list_tools()).tools]
+        second = [t.name for t in (await c.list_tools()).tools]
+
+    assert first == EXPECTED_TOOL_ORDER
+    assert first == second
+
+
+@pytest.mark.asyncio
+async def test_results_carry_result_type(client):
+    """Every result carries resultType; skein never needs a round trip, so
+    all of its results are terminal."""
+    async with client as c:
+        result = await c.list_tools()
+        wire = result.model_dump(by_alias=True, exclude_none=True)
+
+    assert wire["resultType"] == "complete"
+
+
+@pytest.mark.asyncio
+async def test_server_identifies_itself_in_result_meta(client):
+    """Servers SHOULD identify themselves in each result's _meta, now that
+    there is no handshake in which to do it once."""
+    async with client as c:
+        result = await c.list_tools()
+        wire = result.model_dump(by_alias=True, exclude_none=True)
+
+    info = wire["_meta"]["io.modelcontextprotocol/serverInfo"]
+    assert info["name"] == "skein"
+    assert info["version"]
+
+
+@pytest.mark.asyncio
+async def test_server_discover_advertises_supported_versions(client):
+    """Servers MUST implement server/discover. Clients may use it to select a
+    version up front, or as a backward-compatibility probe on stdio."""
+    async with client as c:
+        discovered = await c.session.discover()
+        wire = discovered.model_dump(by_alias=True, exclude_none=True)
+
+    assert PROTOCOL_VERSION in wire["supportedVersions"]
+    assert wire["_meta"]["io.modelcontextprotocol/serverInfo"]["name"] == "skein"
+    # server/discover is itself cacheable, and skein's answer is static.
+    assert wire["ttlMs"] == 300_000
+    assert wire["cacheScope"] == "public"

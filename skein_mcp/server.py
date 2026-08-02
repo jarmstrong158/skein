@@ -12,15 +12,30 @@ import os
 import sys
 from pathlib import Path
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.caching import CacheHint
+from mcp.server.mcpserver import MCPServer
 
+from skein._version import __version__
 from skein.db import open_db
 
 from . import tools as t
 
 DB_PATH = os.environ.get("SKEIN_DB_PATH", "./data/skein.db")
 
-mcp = FastMCP("skein")
+# The tool list is static code: the same six tools for every caller, with no
+# per-caller or auth-scoped variation, so it is safe for a shared intermediary
+# to cache (`public`). It only changes on redeploy, hence the generous TTL.
+# Tool *results* are caller-specific, but `tools/call` is not a cacheable
+# method, so nothing caller-specific is cached.
+mcp = MCPServer(
+    "skein",
+    version=__version__,
+    cache_hints={
+        "tools/list": CacheHint(ttl_ms=300_000, scope="public"),
+        # Supported versions and capabilities are fixed at build time.
+        "server/discover": CacheHint(ttl_ms=300_000, scope="public"),
+    },
+)
 
 
 def _conn():

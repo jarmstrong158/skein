@@ -32,7 +32,7 @@ Skein has four layers, deliberately decoupled so additional ingestion sources ca
          ▼                                        ▼
 ┌────────────────────┐                ┌──────────────────────┐
 │  Dashboard         │                │  MCP server          │
-│  Flask + HTMX +    │                │  FastMCP / stdio     │
+│  Flask + HTMX +    │                │  MCPServer / stdio   │
 │  Jinja templates   │                │  (separate process)  │
 └────────────────────┘                └──────────────────────┘
 ```

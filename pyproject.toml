@@ -21,12 +21,12 @@ dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
     "pytest-asyncio>=0.23",
-    "mcp>=1.0",
+    "mcp>=2.0,<3",
     "ruff>=0.5",
     "mypy>=1.10",
 ]
 mcp = [
-    "mcp>=1.0",
+    "mcp>=2.0,<3",
 ]
 
 [project.scripts]
